@@ -48,7 +48,7 @@ Q_DROP_UNION = "DROP VIEW IF EXISTS events"
 Q_DROP_TABLE = "DROP TABLE IF EXISTS {table_name}"
 
 Q_CREATE_TABLE = """
-    CREATE TABLE {table_name} (
+    CREATE TABLE IF NOT EXISTS {table_name} (
       timestamp BIGINT NOT NULL sortkey, 
       type VARCHAR(20) NOT NULL,
       uid VARCHAR(64) distkey,
@@ -92,7 +92,7 @@ Q_CREATE_UNION = """
     CREATE VIEW events AS ({select_query});
 """
 
-def import_events(force_reload=True):
+def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     weeks = []
@@ -107,7 +107,8 @@ def import_events(force_reload=True):
         else:
             table_name = "events_" + week.replace("-", "_")
             try:
-                db.one(Q_CHECK_FOR_TABLE.format(table_name=table_name))
+                if not db.one(Q_CHECK_FOR_TABLE.format(table_name=table_name)):
+                    weeks_to_load.append(week)
             except Exception:
                 weeks_to_load.append(week)
     weeks_to_load.sort(reverse=True)

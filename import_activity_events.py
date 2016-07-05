@@ -15,7 +15,7 @@ import boto.s3
 import boto.provider
 
 # Load config from disk,
-# and will in credentials from the environment.
+# and pull in credentials from the environment.
 
 with open("config.json") as f:
     CONFIG = json.loads(f.read())

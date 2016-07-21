@@ -37,7 +37,9 @@ Right now we have the following moving parts:
   * An overview of [daily-active and monthly-active user](https://sql.telemetry.mozilla.org/dashboard/fxa-test)
     activity over time.
 
-  * An overview of [login behaviour](https://sql.telemetry.mozilla.org/dashboard/fxa-logins)
+  * A basic [retention dashboard](https://sql.telemetry.mozilla.org/dashboard/fxa-retention).
+
+  * An overview of [login behaviour](https://sql.telemetry.mozilla.org/dashboard/fxa-logins).
 
 Feel free to create your own visualizations of this data
 by logging in at [the hosted redash instance](https://sql.telemetry.mozilla.org).

@@ -49,9 +49,10 @@ Q_DROP_TABLE = "DROP TABLE IF EXISTS {table_name}"
 
 Q_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS {table_name} (
-      timestamp BIGINT NOT NULL sortkey, 
+      timestamp BIGINT NOT NULL sortkey,
       type VARCHAR(20) NOT NULL,
       uid VARCHAR(64) distkey,
+      deviceId VARCHAR(32),
       duration INTEGER,
       service VARCHAR(30),
       userAgentBrowser VARCHAR(30),
@@ -66,9 +67,10 @@ Q_COPY_EVENTS = """
       userAgentBrowser,
       userAgentVersion,
       userAgentOS,
-      uid, 
+      uid,
       type,
-      service
+      service,
+      deviceId
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
@@ -80,6 +82,7 @@ Q_SELECT_FOR_UNION = """
       timestamp AS timestamp,
       type,
       uid,
+      deviceId,
       duration,
       service,
       userAgentbrowser,

@@ -32,17 +32,22 @@ EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 EVENTS_PREFIX = "fxa-flow/data/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "flow-{day}.csv"
 
-# We import each into is own table and maintain a UNION ALL view over them.
+# There are three tables:
+#   * flow_csv      - raw data from the CSV file
+#   * flow_metadata - metadata for each flow
+#   * flow_events   - individual flow events
 
-Q_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS flow_events (
-      timestamp BIGINT NOT NULL sortkey, 
-      flowid VARCHAR(64) distkey,
+Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS flow_csv;"
+
+Q_CREATE_CSV_TABLE = """
+    CREATE TABLE IF NOT EXISTS flow_csv (
+      timestamp BIGINT NOT NULL SORTKEY,
       type VARCHAR(30) NOT NULL,
-      flowTime INTEGER,
-      userAgentBrowser VARCHAR(40),
-      userAgentVersion VARCHAR(40),
-      userAgentOS VARCHAR(40),
+      flowId VARCHAR(64) NOT NULL DISTKEY,
+      flowTime BIGINT NOT NULL,
+      browser VARCHAR(40),
+      browserVersion VARCHAR(40),
+      os VARCHAR(40),
       context VARCHAR(40),
       entrypoint VARCHAR(40),
       migration VARCHAR(40),
@@ -54,22 +59,63 @@ Q_CREATE_TABLE = """
       utmTerm VARCHAR(40)
     );
 """
-
-Q_CLEAR_EVENTS = """
-    DELETE FROM flow_events
-    WHERE timestamp >= {timestamp}
-    AND timestamp < {timestamp} + 86400
+Q_CREATE_METADATA_TABLE = """
+    CREATE TABLE IF NOT EXISTS flow_metadata (
+      flowId VARCHAR(64) NOT NULL UNIQUE SORTKEY,
+      beginTime TIMESTAMP NOT NULL,
+      duration INTERVAL NOT NULL,
+      completed BOOLEAN NOT NULL,
+      newAccount BOOLEAN NOT NULL,
+      browser VARCHAR(40),
+      browserVersion VARCHAR(40),
+      os VARCHAR(40),
+      context VARCHAR(40),
+      entrypoint VARCHAR(40),
+      migration VARCHAR(40),
+      service VARCHAR(40),
+      utmCampaign VARCHAR(40),
+      utmContents VARCHAR(40),
+      utmMedium VARCHAR(40),
+      utmSource VARCHAR(40),
+      utmTerm VARCHAR(40)
+    );
+"""
+Q_CREATE_EVENTS_TABLE = """
+    CREATE TABLE IF NOT EXISTS flow_events (
+      timestamp TIMESTAMP NOT NULL SORTKEY,
+      flowTime INTERVAL NOT NULL,
+      flowId VARCHAR(64) NOT NULL DISTKEY,
+      type VARCHAR(30) NOT NULL
+    );
 """
 
-Q_COPY_EVENTS = """
-    COPY flow_events (
+Q_CHECK_FOR_DAY = """
+    SELECT timestamp FROM flow_events
+    WHERE timestamp::date >= {day}::date
+    AND timestamp::date < {day}::date + 1
+    LIMIT 1;
+"""
+
+Q_CLEAR_DAY_METADATA = """
+    DELETE FROM flow_metadata
+    WHERE beginTime::date >= {day}::date
+    AND beginTime::date < {day}::date + 1;
+"""
+Q_CLEAR_DAY_EVENTS = """
+    DELETE FROM flow_events
+    WHERE timestamp::date >= {day}::date
+    AND timestamp::date < {day}::date + 1;
+"""
+
+Q_COPY_CSV = """
+    COPY flow_csv (
       timestamp,
       type,
-      flowid,
+      flowId,
       flowTime,
-      userAgentBrowser,
-      userAgentVersion,
-      userAgentOS,
+      browser,
+      browserVersion,
+      os,
       context,
       entrypoint,
       migration,
@@ -84,18 +130,81 @@ Q_COPY_EVENTS = """
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
     FORMAT AS CSV;
 """
-
-Q_CHECK_FOR_DAY = """
-    SELECT timestamp FROM flow_events
-    WHERE timestamp >= {timestamp}
-    AND timestamp < {timestamp} + 86400
-    LIMIT 1;
+Q_INSERT_METADATA = """
+    WITH durations AS (
+      SELECT flowId, MAX(flowTime)
+      FROM flow_csv
+      GROUP BY flowId
+    )
+    INSERT INTO flow_metadata (
+      flowId,
+      beginTime,
+      duration,
+      completed,
+      newAccount,
+      browser,
+      browserVersion,
+      os,
+      context,
+      entrypoint,
+      migration,
+      service,
+      utmCampaign,
+      utmContents,
+      utmMedium,
+      utmSource,
+      utmTerm
+    )
+    SELECT (
+      begin.flowId,
+      (begin.timestamp * 1000.0),
+      (durations.flowTime * 1000.0),
+      (CASE WHEN signed.flowId IS NULL THEN FALSE ELSE TRUE END),
+      (CASE WHEN created.flowId IS NULL THEN FALSE ELSE TRUE END),
+      begin.browser,
+      begin.browserVersion,
+      begin.os,
+      begin.context,
+      begin.entrypoint,
+      begin.migration,
+      begin.service,
+      begin.utmCampaign,
+      begin.utmContents,
+      begin.utmMedium,
+      begin.utmSource,
+      begin.utmTerm
+    )
+    FROM flow_csv AS begin
+    INNER JOIN durations
+      ON begin.flowId = durations.flowId AND begin.type = 'flow.begin'
+    LEFT JOIN flow_csv AS created
+      ON begin.flowId = created.flowId AND created.type = 'account.created'
+    LEFT JOIN flow_csv AS signed
+      ON begin.flowId = signed.flowId AND signed.type = 'account.signed';
+"""
+Q_INSERT_EVENTS = """
+    INSERT INTO flow_metadata (
+      timestamp,
+      flowTime,
+      flowId,
+      type
+    )
+    SELECT (
+      (timestamp * 1000.0),
+      (flowTime * 1000.0),
+      flowId,
+      type
+    )
+    FROM flow_csv;
 """
 
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
-    db.run(Q_CREATE_TABLE)
+    db.run(Q_DROP_TABLE_CSV)
+    db.run(Q_CREATE_TABLE_CSV)
+    db.run(Q_CREATE_TABLE_METADATA)
+    db.run(Q_CREATE_TABLE_EVENTS)
     days = []
     days_to_load = []
     # Find all the days available for loading.
@@ -108,7 +217,7 @@ def import_events(force_reload=False):
         if force_reload:
             days_to_load.append(day)
         else:
-            if not db.one(Q_CHECK_FOR_DAY.format(timestamp=day_to_timestamp(day))):
+            if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
                 days_to_load.append(day)
     days_to_load.sort(reverse=True)
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
@@ -118,26 +227,26 @@ def import_events(force_reload=False):
         for day in days_to_load:
             print "LOADING", day
             # Clear any existing data for that day, to avoid duplicates.
-            db.run(Q_CLEAR_EVENTS.format(timestamp=day_to_timestamp(day)))
+            db.run(Q_CLEAR_DAY_METADATA.format(day=day))
+            db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
-            db.run(Q_COPY_EVENTS.format(
+            db.run(Q_COPY_CSV.format(
                 s3path=s3path,
                 **CONFIG
             ))
+            db.run(Q_INSERT_METADATA)
+            db.run(Q_INSERT_EVENTS)
 
         # Print the timestamps for sanity-checking.
-        print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM flow_events")
-        print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM flow_events")
+        print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM flow_csv")
+        print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM flow_csv")
+
+        db.run(Q_DROP_TABLE_CSV)
     except:
         db.run("ROLLBACK TRANSACTION")
         raise
     else:
         db.run("COMMIT TRANSACTION")
-
-
-def day_to_timestamp(day):
-    """This nonsense turns a"YYYY-MM-DD" into a unix timestamp."""
-    return int(time.mktime(datetime.datetime(*map(int, day.split("-"))).utctimetuple()))
 
 if __name__ == "__main__":
     import_events(True)

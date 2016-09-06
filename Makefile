@@ -17,6 +17,7 @@ $(ENV)/COMPLETE:
 .PHONY: import
 import: | $(ENV)/COMPLETE
 	$(ENV)/bin/python ./import_activity_events.py
+	$(ENV)/bin/python ./import_flow_events.py
 
 .PHONY: summarize
 summarize: | $(ENV)/COMPLETE

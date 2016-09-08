@@ -33,14 +33,14 @@ EVENTS_PREFIX = "fxa-flow/data/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "flow-{day}.csv"
 
 # There are three tables:
-#   * flow_csv      - raw data from the CSV file
-#   * flow_metadata - metadata for each flow
-#   * flow_events   - individual flow events
+#   * temporary_raw_flow_data - raw data from the CSV file
+#   * flow_metadata           - metadata for each flow
+#   * flow_events             - individual flow events
 
-Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS flow_csv;"
+Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_flow_data;"
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS flow_csv (
+    CREATE TABLE IF NOT EXISTS temporary_raw_flow_data (
       timestamp BIGINT NOT NULL SORTKEY,
       type VARCHAR(30) NOT NULL,
       flowId VARCHAR(64) NOT NULL DISTKEY,
@@ -108,7 +108,7 @@ Q_CLEAR_DAY_EVENTS = """
 """
 
 Q_COPY_CSV = """
-    COPY flow_csv (
+    COPY temporary_raw_flow_data (
       timestamp,
       type,
       flowId,
@@ -133,7 +133,7 @@ Q_COPY_CSV = """
 Q_INSERT_METADATA = """
     WITH durations AS (
       SELECT flowId, MAX(flowTime)
-      FROM flow_csv
+      FROM temporary_raw_flow_data
       GROUP BY flowId
     )
     INSERT INTO flow_metadata (
@@ -174,16 +174,16 @@ Q_INSERT_METADATA = """
       begin.utmSource,
       begin.utmTerm
     )
-    FROM flow_csv AS begin
+    FROM temporary_raw_flow_data AS begin
     INNER JOIN durations
       ON begin.flowId = durations.flowId AND begin.type = 'flow.begin'
-    LEFT JOIN flow_csv AS created
+    LEFT JOIN temporary_raw_flow_data AS created
       ON begin.flowId = created.flowId AND created.type = 'account.created'
-    LEFT JOIN flow_csv AS signed
+    LEFT JOIN temporary_raw_flow_data AS signed
       ON begin.flowId = signed.flowId AND signed.type = 'account.signed';
 """
 Q_INSERT_EVENTS = """
-    INSERT INTO flow_metadata (
+    INSERT INTO flow_events (
       timestamp,
       flowTime,
       flowId,
@@ -195,7 +195,7 @@ Q_INSERT_EVENTS = """
       flowId,
       type
     )
-    FROM flow_csv;
+    FROM temporary_raw_flow_data;
 """
 
 def import_events(force_reload=False):
@@ -238,8 +238,8 @@ def import_events(force_reload=False):
             db.run(Q_INSERT_EVENTS)
 
         # Print the timestamps for sanity-checking.
-        print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM flow_csv")
-        print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM flow_csv")
+        print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
+        print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")
 
         db.run(Q_DROP_TABLE_CSV)
     except:

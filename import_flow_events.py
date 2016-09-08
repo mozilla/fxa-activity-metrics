@@ -167,7 +167,7 @@ Q_INSERT_METADATA = """
       utmTerm
     )
     FROM temporary_raw_flow_data
-    WHERE type = 'flow.begin'
+    WHERE type = 'flow.begin';
 """
 Q_UPDATE_BEGIN_TIME = """
     UPDATE flow_metadata
@@ -178,7 +178,7 @@ Q_UPDATE_BEGIN_TIME = """
       SELECT flowId
       FROM temporary_raw_flow_data
     ) AS times
-    WHERE flow_metadata.flowId = times.flowId
+    WHERE flow_metadata.flowId = times.flowId;
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
@@ -188,7 +188,7 @@ Q_UPDATE_DURATION = """
       FROM temporary_raw_flow_data
       GROUP BY flowId
     ) AS durations
-    WHERE flow_metadata.flowId = durations.flowId
+    WHERE flow_metadata.flowId = durations.flowId;
 """
 Q_UPDATE_COMPLETED = """
     UPDATE flow_metadata
@@ -198,7 +198,7 @@ Q_UPDATE_COMPLETED = """
       FROM temporary_raw_flow_data
       WHERE type = 'account.signed'
     ) AS signed
-    WHERE flow_metadata.flowId = signed.flowId
+    WHERE flow_metadata.flowId = signed.flowId;
 """
 Q_UPDATE_NEW_ACCOUNT = """
     UPDATE flow_metadata
@@ -208,7 +208,7 @@ Q_UPDATE_NEW_ACCOUNT = """
       FROM temporary_raw_flow_data
       WHERE type = 'account.created'
     ) AS created
-    WHERE flow_metadata.flowId = created.flowId
+    WHERE flow_metadata.flowId = created.flowId;
 """
 
 Q_INSERT_EVENTS = """
@@ -233,7 +233,7 @@ Q_UPDATE_TIMESTAMP = """
       SELECT flowId
       FROM temporary_raw_flow_data
     ) AS times
-    WHERE flow_events.flowId = times.flowId
+    WHERE flow_events.flowId = times.flowId;
 """
 
 def import_events(force_reload=False):

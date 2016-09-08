@@ -95,20 +95,20 @@ Q_CREATE_EVENTS_TABLE = """
 
 Q_CHECK_FOR_DAY = """
     SELECT timestamp FROM flow_events
-    WHERE timestamp::date >= '{day}'::date
-    AND timestamp::date < '{day}'::date + 1
+    WHERE timestamp::DATE >= '{day}'::DATE
+    AND timestamp::DATE < '{day}'::DATE + 1
     LIMIT 1;
 """
 
 Q_CLEAR_DAY_METADATA = """
     DELETE FROM flow_metadata
-    WHERE beginTime::date >= '{day}'::date
-    AND beginTime::date < '{day}'::date + 1;
+    WHERE beginTime::DATE >= '{day}'::DATE
+    AND beginTime::DATE < '{day}'::DATE + 1;
 """
 Q_CLEAR_DAY_EVENTS = """
     DELETE FROM flow_events
-    WHERE timestamp::date >= '{day}'::date
-    AND timestamp::date < '{day}'::date + 1;
+    WHERE timestamp::DATE >= '{day}'::DATE
+    AND timestamp::DATE < '{day}'::DATE + 1;
 """
 
 Q_COPY_CSV = """

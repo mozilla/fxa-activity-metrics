@@ -61,8 +61,8 @@ Q_CREATE_CSV_TABLE = """
 """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
-      flowId VARCHAR(64) NOT NULL UNIQUE SORTKEY,
-      beginTime TIMESTAMP NOT NULL,
+      flowId VARCHAR(64) NOT NULL UNIQUE,
+      beginTime TIMESTAMP NOT NULL SORTKEY,
       duration INTERVAL NOT NULL,
       completed BOOLEAN NOT NULL,
       newAccount BOOLEAN NOT NULL,

@@ -63,7 +63,9 @@ Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
       flowId VARCHAR(64) NOT NULL UNIQUE,
       beginTime TIMESTAMP NOT NULL SORTKEY,
-      duration INTERVAL NOT NULL,
+      -- Ideally duration would be type INTERVAL
+      -- but redshift doesn't support that.
+      duration INTEGER NOT NULL,
       completed BOOLEAN NOT NULL,
       newAccount BOOLEAN NOT NULL,
       uaBrowser VARCHAR(40),
@@ -83,7 +85,9 @@ Q_CREATE_METADATA_TABLE = """
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_events (
       timestamp TIMESTAMP NOT NULL SORTKEY,
-      flowTime INTERVAL NOT NULL,
+      -- Ideally flowTime would be type INTERVAL
+      -- but redshift doesn't support that.
+      flowTime INTEGER NOT NULL,
       flowId VARCHAR(64) NOT NULL DISTKEY,
       type VARCHAR(30) NOT NULL
     );
@@ -158,9 +162,9 @@ Q_INSERT_METADATA = """
     SELECT (
       begin.flowId,
       -- Multiply by a thousand because timestamps arrive in milliseconds
-      -- whereas TIMESTAMP and INTERVAL are in microseconds.
+      -- whereas postgres TIMESTAMPs are measured in microseconds.
       (begin.timestamp * 1000.0),
-      (durations.flowTime * 1000.0),
+      durations.flowTime,
       (CASE WHEN signed.flowId IS NULL THEN FALSE ELSE TRUE END),
       (CASE WHEN created.flowId IS NULL THEN FALSE ELSE TRUE END),
       begin.uaBrowser,
@@ -193,9 +197,9 @@ Q_INSERT_EVENTS = """
     )
     SELECT (
       -- Multiply by a thousand because timestamps arrive in milliseconds
-      -- whereas TIMESTAMP and INTERVAL are in microseconds.
+      -- whereas postgres TIMESTAMPs are measured in microseconds.
       (timestamp * 1000.0),
-      (flowTime * 1000.0),
+      flowTime,
       flowId,
       type
     )
@@ -205,10 +209,10 @@ Q_INSERT_EVENTS = """
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
-    db.run(Q_DROP_TABLE_CSV)
-    db.run(Q_CREATE_TABLE_CSV)
-    db.run(Q_CREATE_TABLE_METADATA)
-    db.run(Q_CREATE_TABLE_EVENTS)
+    db.run(Q_DROP_CSV_TABLE)
+    db.run(Q_CREATE_CSV_TABLE)
+    db.run(Q_CREATE_METADATA_TABLE)
+    db.run(Q_CREATE_EVENTS_TABLE)
     days = []
     days_to_load = []
     # Find all the days available for loading.
@@ -245,7 +249,7 @@ def import_events(force_reload=False):
         print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
         print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")
 
-        db.run(Q_DROP_TABLE_CSV)
+        db.run(Q_DROP_CSV_TABLE)
     except:
         db.run("ROLLBACK TRANSACTION")
         raise

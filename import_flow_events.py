@@ -157,6 +157,8 @@ Q_INSERT_METADATA = """
     )
     SELECT (
       begin.flowId,
+      -- Multiply by a thousand because timestamps arrive in milliseconds
+      -- whereas TIMESTAMP and INTERVAL are in microseconds.
       (begin.timestamp * 1000.0),
       (durations.flowTime * 1000.0),
       (CASE WHEN signed.flowId IS NULL THEN FALSE ELSE TRUE END),
@@ -190,6 +192,8 @@ Q_INSERT_EVENTS = """
       type
     )
     SELECT (
+      -- Multiply by a thousand because timestamps arrive in milliseconds
+      -- whereas TIMESTAMP and INTERVAL are in microseconds.
       (timestamp * 1000.0),
       (flowTime * 1000.0),
       flowId,

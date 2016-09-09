@@ -279,12 +279,11 @@ def import_events(force_reload=False):
             db.run(Q_UPDATE_NEW_ACCOUNT)
             db.run(Q_INSERT_EVENTS)
             db.run(Q_UPDATE_TIMESTAMP)
+            db.run(Q_DROP_CSV_TABLE)
 
         # Print the timestamps for sanity-checking.
         print "MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
         print "MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")
-
-        db.run(Q_DROP_CSV_TABLE)
     except:
         db.run("ROLLBACK TRANSACTION")
         raise

@@ -62,12 +62,12 @@ Q_CREATE_CSV_TABLE = """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
       flowId VARCHAR(64) NOT NULL UNIQUE,
-      beginTime TIMESTAMP NOT NULL,
+      beginTime BIGINT NOT NULL,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
-      duration INTEGER NOT NULL,
-      completed BOOLEAN NOT NULL,
-      newAccount BOOLEAN NOT NULL,
+      duration INTEGER NOT NULL DEFAULT 0,
+      completed BOOLEAN NOT NULL DEFAULT FALSE,
+      newAccount BOOLEAN NOT NULL DEFAULT FALSE,
       uaBrowser VARCHAR(40),
       uaVersion VARCHAR(40),
       uaOS VARCHAR(40),
@@ -84,7 +84,7 @@ Q_CREATE_METADATA_TABLE = """
 """
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_events (
-      timestamp TIMESTAMP NOT NULL,
+      timestamp BIGINT NOT NULL,
       -- Ideally flowTime would be type INTERVAL
       -- but redshift doesn't support that.
       flowTime INTEGER NOT NULL,
@@ -95,20 +95,20 @@ Q_CREATE_EVENTS_TABLE = """
 
 Q_CHECK_FOR_DAY = """
     SELECT timestamp FROM flow_events
-    WHERE timestamp::DATE >= '{day}'::DATE
-    AND timestamp::DATE < '{day}'::DATE + 1
+    WHERE timestamp >= {timestamp}
+    AND timestamp < {timestamp} + 86400
     LIMIT 1;
 """
 
 Q_CLEAR_DAY_METADATA = """
     DELETE FROM flow_metadata
-    WHERE beginTime::DATE >= '{day}'::DATE
-    AND beginTime::DATE < '{day}'::DATE + 1;
+    WHERE beginTime >= {timestamp}
+    AND beginTime < {timestamp} + 86400;
 """
 Q_CLEAR_DAY_EVENTS = """
     DELETE FROM flow_events
-    WHERE timestamp::DATE >= '{day}'::DATE
-    AND timestamp::DATE < '{day}'::DATE + 1;
+    WHERE timestamp >= {timestamp}
+    AND timestamp < {timestamp} + 86400;
 """
 
 Q_COPY_CSV = """
@@ -139,9 +139,6 @@ Q_INSERT_METADATA = """
     INSERT INTO flow_metadata (
       flowId,
       beginTime,
-      duration,
-      completed,
-      newAccount,
       uaBrowser,
       uaVersion,
       uaOS,
@@ -157,10 +154,7 @@ Q_INSERT_METADATA = """
     )
     SELECT (
       flowId,
-      '1970-01-01'::TIMESTAMP,
-      0,
-      FALSE,
-      FALSE,
+      timestamp,
       uaBrowser,
       uaVersion,
       uaOS,
@@ -176,17 +170,6 @@ Q_INSERT_METADATA = """
     )
     FROM temporary_raw_flow_data
     WHERE type = 'flow.begin';
-"""
-Q_UPDATE_BEGIN_TIME = """
-    UPDATE flow_metadata
-    -- Multiply by a thousand because timestamps arrive in milliseconds
-    -- whereas postgres TIMESTAMPs are measured in microseconds.
-    SET beginTime = (times.timestamp * 1000.0)
-    FROM (
-      SELECT flowId
-      FROM temporary_raw_flow_data
-    ) AS times
-    WHERE flow_metadata.flowId = times.flowId;
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
@@ -227,23 +210,12 @@ Q_INSERT_EVENTS = """
       type
     )
     SELECT (
-      '1970-01-01'::TIMESTAMP,
+      timestamp,
       flowTime,
       flowId,
       type
     )
     FROM temporary_raw_flow_data;
-"""
-Q_UPDATE_TIMESTAMP = """
-    UPDATE flow_events
-    -- Multiply by a thousand because timestamps arrive in milliseconds
-    -- whereas postgres TIMESTAMPs are measured in microseconds.
-    SET timestamp = (times.timestamp * 1000.0)
-    FROM (
-      SELECT flowId
-      FROM temporary_raw_flow_data
-    ) AS times
-    WHERE flow_events.flowId = times.flowId;
 """
 
 def import_events(force_reload=False):
@@ -265,7 +237,7 @@ def import_events(force_reload=False):
         if force_reload:
             days_to_load.append(day)
         else:
-            if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
+            if not db.one(Q_CHECK_FOR_DAY.format(timestamp=day_to_timestamp(day))):
                 days_to_load.append(day)
     days_to_load.sort(reverse=True)
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
@@ -275,20 +247,18 @@ def import_events(force_reload=False):
         for day in days_to_load:
             print "LOADING", day
             # Clear any existing data for that day, to avoid duplicates.
-            db.run(Q_CLEAR_DAY_METADATA.format(day=day))
-            db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
+            db.run(Q_CLEAR_DAY_METADATA.format(timestamp=day_to_timestamp(day)))
+            db.run(Q_CLEAR_DAY_EVENTS.format(timestamp=day_to_timestamp(day)))
             s3path = EVENTS_FILE_URL.format(day=day)
             db.run(Q_COPY_CSV.format(
                 s3path=s3path,
                 **CONFIG
             ))
             db.run(Q_INSERT_METADATA)
-            db.run(Q_UPDATE_BEGIN_TIME)
             db.run(Q_UPDATE_DURATION)
             db.run(Q_UPDATE_COMPLETED)
             db.run(Q_UPDATE_NEW_ACCOUNT)
             db.run(Q_INSERT_EVENTS)
-            db.run(Q_UPDATE_TIMESTAMP)
             db.run(Q_DROP_CSV_TABLE)
 
         # Print the timestamps for sanity-checking.
@@ -299,6 +269,10 @@ def import_events(force_reload=False):
         raise
     else:
         db.run("COMMIT TRANSACTION")
+
+def day_to_timestamp(day):
+    """This nonsense turns a"YYYY-MM-DD" into a unix timestamp."""
+    return int(time.mktime(datetime.datetime(*map(int, day.split("-"))).utctimetuple()))
 
 if __name__ == "__main__":
     import_events(True)

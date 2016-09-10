@@ -220,13 +220,12 @@ def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
-    db.run(Q_CREATE_CSV_TABLE)
     db.run(Q_CREATE_METADATA_TABLE)
     db.run(Q_CREATE_EVENTS_TABLE)
     days = []
     days_to_load = []
-    # Find all the days available for loading.
     print EVENTS_BUCKET, EVENTS_PREFIX
+    # Find all the days available for loading.
     for key in b.list(prefix=EVENTS_PREFIX):
         filename = os.path.basename(key.name)
         day = "-".join(filename[:-4].split("-")[1:])
@@ -241,22 +240,27 @@ def import_events(force_reload=False):
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
     db.run("BEGIN TRANSACTION")
     try:
-        # Load data for each day direct from s3,
         for day in days_to_load:
             print "LOADING", day
-            # Clear any existing data for that day, to avoid duplicates.
+            # Create the temporary table
+            db.run(Q_CREATE_CSV_TABLE)
+            # Clear any existing data for the day, to avoid duplicates.
             db.run(Q_CLEAR_DAY_METADATA.format(day=day))
             db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
+            # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(
                 s3path=s3path,
                 **CONFIG
             ))
+            # Populate the flow_metadata table
             db.run(Q_INSERT_METADATA)
             db.run(Q_UPDATE_DURATION)
             db.run(Q_UPDATE_COMPLETED)
             db.run(Q_UPDATE_NEW_ACCOUNT)
+            # Populate the flow_events table
             db.run(Q_INSERT_EVENTS)
+            # Drop the temporary table
             db.run(Q_DROP_CSV_TABLE)
 
         # Print the timestamps for sanity-checking.

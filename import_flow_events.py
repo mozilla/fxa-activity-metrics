@@ -151,7 +151,7 @@ Q_INSERT_METADATA = """
       utmSource,
       utmTerm
     )
-    SELECT (
+    SELECT
       flowId,
       uaBrowser,
       uaVersion,
@@ -165,7 +165,6 @@ Q_INSERT_METADATA = """
       utmMedium,
       utmSource,
       utmTerm
-    )
     FROM temporary_raw_flow_data
     WHERE type = 'flow.begin';
 """
@@ -217,11 +216,10 @@ Q_INSERT_EVENTS = """
       flowId,
       type
     )
-    SELECT (
+    SELECT
       flowTime,
       flowId,
       type
-    )
     FROM temporary_raw_flow_data;
 """
 Q_UPDATE_TIMESTAMP = """

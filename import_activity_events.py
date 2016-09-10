@@ -28,7 +28,7 @@ if "aws_access_key_id" not in CONFIG:
 DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
 
 # Event data files are named like "events-2016-02-15.csv"
-# and contain events for the week starting that date.
+# and contain events for the specified date.
 # Unfortunately some of the data files have missing fields :-(
 # We work around this by downloading the file, fixing it up,
 # and uploading the fixed copy to a new location.
@@ -36,8 +36,8 @@ DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".fo
 EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 EVENTS_PREFIX = "fxa-retention/data/"
 EVENTS_PREFIX_FIXED = "fxa-retention/data-rfkelly/"
-EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "events-{week}.csv"
-EVENTS_FILE_FIXED_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX_FIXED + "events-{week}.fixed.csv"
+EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "events-{day}.csv"
+EVENTS_FILE_FIXED_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX_FIXED + "events-{day}.fixed.csv"
 
 # We import each into is own table and maintain a UNION ALL view over them.
 
@@ -49,9 +49,10 @@ Q_DROP_TABLE = "DROP TABLE IF EXISTS {table_name}"
 
 Q_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS {table_name} (
-      timestamp BIGINT NOT NULL sortkey, 
+      timestamp BIGINT NOT NULL sortkey,
       type VARCHAR(20) NOT NULL,
       uid VARCHAR(64) distkey,
+      deviceId VARCHAR(32),
       duration INTEGER,
       service VARCHAR(30),
       userAgentBrowser VARCHAR(30),
@@ -66,9 +67,10 @@ Q_COPY_EVENTS = """
       userAgentBrowser,
       userAgentVersion,
       userAgentOS,
-      uid, 
+      uid,
       type,
-      service
+      service,
+      deviceId
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
@@ -80,6 +82,7 @@ Q_SELECT_FOR_UNION = """
       timestamp AS timestamp,
       type,
       uid,
+      deviceId,
       duration,
       service,
       userAgentbrowser,
@@ -95,38 +98,38 @@ Q_CREATE_UNION = """
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
-    weeks = []
-    weeks_to_load = []
-    # Find all the weeks available for loading.
+    days = []
+    days_to_load = []
+    # Find all the days available for loading.
     for key in b.list(prefix=EVENTS_PREFIX):
         filename = os.path.basename(key.name)
-        week = "-".join(filename[:-4].split("-")[1:])
-        weeks.append(week)
+        day = "-".join(filename[:-4].split("-")[1:])
+        days.append(day)
         if force_reload:
-            weeks_to_load.append(week)
+            days_to_load.append(day)
         else:
-            table_name = "events_" + week.replace("-", "_")
+            table_name = "events_" + day.replace("-", "_")
             try:
                 if not db.one(Q_CHECK_FOR_TABLE.format(table_name=table_name)):
-                    weeks_to_load.append(week)
+                    days_to_load.append(day)
             except Exception:
-                weeks_to_load.append(week)
-    weeks_to_load.sort(reverse=True)
-    print "LOADING {} WEEKS OF DATA".format(len(weeks_to_load))
+                days_to_load.append(day)
+    days_to_load.sort(reverse=True)
+    print "LOADING {} DAYS OF DATA".format(len(days_to_load))
     db.run("BEGIN TRANSACTION")
     try:
         # Clear the union view while to change the tables available.
         print "CLEARING VIEW"
         db.run(Q_DROP_UNION)
 
-        # Load data for each week direct from s3,
+        # Load data for each day direct from s3,
         # fixing it up if there's an error with the load.
-        for week in weeks_to_load:
-            table_name = "events_" + week.replace("-", "_")
+        for day in days_to_load:
+            table_name = "events_" + day.replace("-", "_")
             db.run(Q_DROP_TABLE.format(table_name=table_name))
             db.run(Q_CREATE_TABLE.format(table_name=table_name))
-            print "LOADING", week
-            s3path = EVENTS_FILE_URL.format(week=week)
+            print "LOADING", day
+            s3path = EVENTS_FILE_URL.format(day=day)
             try:
                 db.run(Q_COPY_EVENTS.format(
                     table_name=table_name,
@@ -134,8 +137,8 @@ def import_events(force_reload=False):
                     **CONFIG
                 ))
             except Exception:
-                print "FAILED", week, "TRYING FIXED DATA"
-                s3path = EVENTS_FILE_FIXED_URL.format(week=week)
+                print "FAILED", day, "TRYING FIXED DATA"
+                s3path = EVENTS_FILE_FIXED_URL.format(day=day)
                 try:
                     db.run(Q_COPY_EVENTS.format(
                         table_name=table_name,
@@ -143,8 +146,8 @@ def import_events(force_reload=False):
                         **CONFIG
                     ))
                 except Exception:
-                    print "FAILED, FIXING DATA", week
-                    fixup_event_data(b, week)
+                    print "FAILED, FIXING DATA", day
+                    fixup_event_data(b, day)
                     db.run(Q_COPY_EVENTS.format(
                         table_name=table_name,
                         s3path=s3path,
@@ -154,8 +157,8 @@ def import_events(force_reload=False):
         # Re-create the view to incorporate all loaded tables.
         print "RE-CREATING VIEW"
         select_union_all = []
-        for week in weeks:
-            table_name = "events_" + week.replace("-", "_")
+        for day in days:
+            table_name = "events_" + day.replace("-", "_")
             select_union_all.append(Q_SELECT_FOR_UNION.format(
                 table_name=table_name
             ))
@@ -173,11 +176,11 @@ def import_events(force_reload=False):
         db.run("COMMIT TRANSACTION")
 
 
-def fixup_event_data(b, week):
+def fixup_event_data(b, day):
     """Download a data file, remove invalid lines, and re-upload"""
-    orig_key = b.get_key(urlparse.urlparse(EVENTS_FILE_URL.format(week=week)).path[1:])
+    orig_key = b.get_key(urlparse.urlparse(EVENTS_FILE_URL.format(day=day)).path[1:])
     assert orig_key is not None
-    fixed_key = b.new_key(urlparse.urlparse(EVENTS_FILE_FIXED_URL.format(week=week)).path[1:])
+    fixed_key = b.new_key(urlparse.urlparse(EVENTS_FILE_FIXED_URL.format(day=day)).path[1:])
     with tempfile.TemporaryFile() as tmp_orig:
         orig_key.get_contents_to_file(tmp_orig)
         tmp_orig.seek(0)

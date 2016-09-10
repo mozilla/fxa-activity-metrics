@@ -62,7 +62,7 @@ Q_CREATE_CSV_TABLE = """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
       flow_id VARCHAR(64) NOT NULL UNIQUE,
-      begin_time TIMESTAMP NOT NULL DEFAULT '1970-01-01'::TIMESTAMP SORTKEY,
+      begin_time TIMESTAMP NOT NULL SORTKEY,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
       duration INTEGER NOT NULL DEFAULT 0,
@@ -84,7 +84,7 @@ Q_CREATE_METADATA_TABLE = """
 """
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_events (
-      timestamp TIMESTAMP NOT NULL DEFAULT '1970-01-01'::TIMESTAMP SORTKEY,
+      timestamp TIMESTAMP NOT NULL SORTKEY,
       -- Ideally flow_time would be type INTERVAL
       -- but redshift doesn't support that.
       flow_time INTEGER NOT NULL,
@@ -138,6 +138,7 @@ Q_COPY_CSV = """
 Q_INSERT_METADATA = """
     INSERT INTO flow_metadata (
       flow_id,
+      begin_time,
       ua_browser,
       ua_version,
       ua_os,
@@ -153,6 +154,7 @@ Q_INSERT_METADATA = """
     )
     SELECT
       flow_id,
+      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
       ua_browser,
       ua_version,
       ua_os,
@@ -167,17 +169,6 @@ Q_INSERT_METADATA = """
       utm_term
     FROM temporary_raw_flow_data
     WHERE type = 'flow.begin';
-"""
-Q_UPDATE_BEGIN_TIME = """
-    UPDATE flow_metadata
-    -- Multiply by a thousand because timestamps arrive in milliseconds
-    -- whereas postgres TIMESTAMPs are measured in microseconds.
-    SET begin_time = (times.timestamp * 1000.0)
-    FROM (
-      SELECT flow_id
-      FROM temporary_raw_flow_data
-    ) AS times
-    WHERE flow_metadata.flow_id = times.flow_id;
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
@@ -212,26 +203,17 @@ Q_UPDATE_NEW_ACCOUNT = """
 
 Q_INSERT_EVENTS = """
     INSERT INTO flow_events (
+      timestamp,
       flow_time,
       flow_id,
       type
     )
     SELECT
+      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
       flow_time,
       flow_id,
       type
     FROM temporary_raw_flow_data;
-"""
-Q_UPDATE_TIMESTAMP = """
-    UPDATE flow_events
-    -- Multiply by a thousand because timestamps arrive in milliseconds
-    -- whereas postgres TIMESTAMPs are measured in microseconds.
-    SET timestamp = (times.timestamp * 1000.0)
-    FROM (
-      SELECT flow_id
-      FROM temporary_raw_flow_data
-    ) AS times
-    WHERE flow_events.flow_id = times.flow_id;
 """
 
 def import_events(force_reload=False):
@@ -271,12 +253,10 @@ def import_events(force_reload=False):
                 **CONFIG
             ))
             db.run(Q_INSERT_METADATA)
-            db.run(Q_UPDATE_BEGIN_TIME)
             db.run(Q_UPDATE_DURATION)
             db.run(Q_UPDATE_COMPLETED)
             db.run(Q_UPDATE_NEW_ACCOUNT)
             db.run(Q_INSERT_EVENTS)
-            db.run(Q_UPDATE_TIMESTAMP)
             db.run(Q_DROP_CSV_TABLE)
 
         # Print the timestamps for sanity-checking.

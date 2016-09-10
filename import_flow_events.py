@@ -76,7 +76,7 @@ Q_CREATE_METADATA_TABLE = """
       migration VARCHAR(40),
       service VARCHAR(40),
       utm_campaign VARCHAR(40),
-      utm_contents VARCHAR(40),
+      utm_content VARCHAR(40),
       utm_medium VARCHAR(40),
       utm_source VARCHAR(40),
       utm_term VARCHAR(40)
@@ -146,7 +146,7 @@ Q_INSERT_METADATA = """
       migration,
       service,
       utm_campaign,
-      utm_contents,
+      utm_content,
       utm_medium,
       utm_source,
       utm_term
@@ -161,7 +161,7 @@ Q_INSERT_METADATA = """
       migration,
       service,
       utm_campaign,
-      utm_contents,
+      utm_content,
       utm_medium,
       utm_source,
       utm_term

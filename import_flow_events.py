@@ -174,7 +174,7 @@ Q_UPDATE_DURATION = """
     UPDATE flow_metadata
     SET duration = durations.flow_time
     FROM (
-      SELECT flow_id, MAX(flow_time)
+      SELECT flow_id, MAX(flow_time) AS flow_time
       FROM temporary_raw_flow_data
       GROUP BY flow_id
     ) AS durations

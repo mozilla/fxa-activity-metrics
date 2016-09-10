@@ -43,52 +43,52 @@ Q_CREATE_CSV_TABLE = """
     CREATE TABLE IF NOT EXISTS temporary_raw_flow_data (
       timestamp BIGINT NOT NULL SORTKEY,
       type VARCHAR(30) NOT NULL,
-      flowId VARCHAR(64) NOT NULL DISTKEY,
-      flowTime BIGINT NOT NULL,
-      uaBrowser VARCHAR(40),
-      uaVersion VARCHAR(40),
-      uaOS VARCHAR(40),
+      flow_id VARCHAR(64) NOT NULL DISTKEY,
+      flow_time BIGINT NOT NULL,
+      ua_browser VARCHAR(40),
+      ua_version VARCHAR(40),
+      ua_os VARCHAR(40),
       context VARCHAR(40),
       entrypoint VARCHAR(40),
       migration VARCHAR(40),
       service VARCHAR(40),
-      utmCampaign VARCHAR(40),
-      utmContent VARCHAR(40),
-      utmMedium VARCHAR(40),
-      utmSource VARCHAR(40),
-      utmTerm VARCHAR(40)
+      utm_campaign VARCHAR(40),
+      utm_content VARCHAR(40),
+      utm_medium VARCHAR(40),
+      utm_source VARCHAR(40),
+      utm_term VARCHAR(40)
     );
 """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
-      flowId VARCHAR(64) NOT NULL UNIQUE,
-      beginTime TIMESTAMP NOT NULL DEFAULT '1970-01-01'::TIMESTAMP SORTKEY,
+      flow_id VARCHAR(64) NOT NULL UNIQUE,
+      begin_time TIMESTAMP NOT NULL DEFAULT '1970-01-01'::TIMESTAMP SORTKEY,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
       duration INTEGER NOT NULL DEFAULT 0,
       completed BOOLEAN NOT NULL DEFAULT FALSE,
-      newAccount BOOLEAN NOT NULL DEFAULT FALSE,
-      uaBrowser VARCHAR(40),
-      uaVersion VARCHAR(40),
-      uaOS VARCHAR(40),
+      new_account BOOLEAN NOT NULL DEFAULT FALSE,
+      ua_browser VARCHAR(40),
+      ua_version VARCHAR(40),
+      ua_os VARCHAR(40),
       context VARCHAR(40),
       entrypoint VARCHAR(40),
       migration VARCHAR(40),
       service VARCHAR(40),
-      utmCampaign VARCHAR(40),
-      utmContents VARCHAR(40),
-      utmMedium VARCHAR(40),
-      utmSource VARCHAR(40),
-      utmTerm VARCHAR(40)
+      utm_campaign VARCHAR(40),
+      utm_contents VARCHAR(40),
+      utm_medium VARCHAR(40),
+      utm_source VARCHAR(40),
+      utm_term VARCHAR(40)
     );
 """
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_events (
       timestamp TIMESTAMP NOT NULL DEFAULT '1970-01-01'::TIMESTAMP SORTKEY,
-      -- Ideally flowTime would be type INTERVAL
+      -- Ideally flow_time would be type INTERVAL
       -- but redshift doesn't support that.
-      flowTime INTEGER NOT NULL,
-      flowId VARCHAR(64) NOT NULL DISTKEY,
+      flow_time INTEGER NOT NULL,
+      flow_id VARCHAR(64) NOT NULL DISTKEY,
       type VARCHAR(30) NOT NULL
     );
 """
@@ -102,8 +102,8 @@ Q_CHECK_FOR_DAY = """
 
 Q_CLEAR_DAY_METADATA = """
     DELETE FROM flow_metadata
-    WHERE beginTime::DATE >= '{day}'::DATE
-    AND beginTime::DATE < '{day}'::DATE + 1;
+    WHERE begin_time::DATE >= '{day}'::DATE
+    AND begin_time::DATE < '{day}'::DATE + 1;
 """
 Q_CLEAR_DAY_EVENTS = """
     DELETE FROM flow_events
@@ -115,20 +115,20 @@ Q_COPY_CSV = """
     COPY temporary_raw_flow_data (
       timestamp,
       type,
-      flowId,
-      flowTime,
-      uaBrowser,
-      uaVersion,
-      uaOS,
+      flow_id,
+      flow_time,
+      ua_browser,
+      ua_version,
+      ua_os,
       context,
       entrypoint,
       migration,
       service,
-      utmCampaign,
-      utmContent,
-      utmMedium,
-      utmSource,
-      utmTerm
+      utm_campaign,
+      utm_content,
+      utm_medium,
+      utm_source,
+      utm_term
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
@@ -137,34 +137,34 @@ Q_COPY_CSV = """
 
 Q_INSERT_METADATA = """
     INSERT INTO flow_metadata (
-      flowId,
-      uaBrowser,
-      uaVersion,
-      uaOS,
+      flow_id,
+      ua_browser,
+      ua_version,
+      ua_os,
       context,
       entrypoint,
       migration,
       service,
-      utmCampaign,
-      utmContents,
-      utmMedium,
-      utmSource,
-      utmTerm
+      utm_campaign,
+      utm_contents,
+      utm_medium,
+      utm_source,
+      utm_term
     )
     SELECT
-      flowId,
-      uaBrowser,
-      uaVersion,
-      uaOS,
+      flow_id,
+      ua_browser,
+      ua_version,
+      ua_os,
       context,
       entrypoint,
       migration,
       service,
-      utmCampaign,
-      utmContents,
-      utmMedium,
-      utmSource,
-      utmTerm
+      utm_campaign,
+      utm_contents,
+      utm_medium,
+      utm_source,
+      utm_term
     FROM temporary_raw_flow_data
     WHERE type = 'flow.begin';
 """
@@ -172,53 +172,53 @@ Q_UPDATE_BEGIN_TIME = """
     UPDATE flow_metadata
     -- Multiply by a thousand because timestamps arrive in milliseconds
     -- whereas postgres TIMESTAMPs are measured in microseconds.
-    SET beginTime = (times.timestamp * 1000.0)
+    SET begin_time = (times.timestamp * 1000.0)
     FROM (
-      SELECT flowId
+      SELECT flow_id
       FROM temporary_raw_flow_data
     ) AS times
-    WHERE flow_metadata.flowId = times.flowId;
+    WHERE flow_metadata.flow_id = times.flow_id;
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
-    SET duration = durations.flowTime
+    SET duration = durations.flow_time
     FROM (
-      SELECT flowId, MAX(flowTime)
+      SELECT flow_id, MAX(flow_time)
       FROM temporary_raw_flow_data
-      GROUP BY flowId
+      GROUP BY flow_id
     ) AS durations
-    WHERE flow_metadata.flowId = durations.flowId;
+    WHERE flow_metadata.flow_id = durations.flow_id;
 """
 Q_UPDATE_COMPLETED = """
     UPDATE flow_metadata
     SET completed = TRUE
     FROM (
-      SELECT flowId
+      SELECT flow_id
       FROM temporary_raw_flow_data
       WHERE type = 'account.signed'
     ) AS signed
-    WHERE flow_metadata.flowId = signed.flowId;
+    WHERE flow_metadata.flow_id = signed.flow_id;
 """
 Q_UPDATE_NEW_ACCOUNT = """
     UPDATE flow_metadata
-    SET newAccount = TRUE
+    SET new_account = TRUE
     FROM (
-      SELECT flowId
+      SELECT flow_id
       FROM temporary_raw_flow_data
       WHERE type = 'account.created'
     ) AS created
-    WHERE flow_metadata.flowId = created.flowId;
+    WHERE flow_metadata.flow_id = created.flow_id;
 """
 
 Q_INSERT_EVENTS = """
     INSERT INTO flow_events (
-      flowTime,
-      flowId,
+      flow_time,
+      flow_id,
       type
     )
     SELECT
-      flowTime,
-      flowId,
+      flow_time,
+      flow_id,
       type
     FROM temporary_raw_flow_data;
 """
@@ -228,10 +228,10 @@ Q_UPDATE_TIMESTAMP = """
     -- whereas postgres TIMESTAMPs are measured in microseconds.
     SET timestamp = (times.timestamp * 1000.0)
     FROM (
-      SELECT flowId
+      SELECT flow_id
       FROM temporary_raw_flow_data
     ) AS times
-    WHERE flow_events.flowId = times.flowId;
+    WHERE flow_events.flow_id = times.flow_id;
 """
 
 def import_events(force_reload=False):

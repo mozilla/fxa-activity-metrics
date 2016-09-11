@@ -269,4 +269,4 @@ def import_events(force_reload=False):
         db.run("COMMIT TRANSACTION")
 
 if __name__ == "__main__":
-    import_events(True)
+    import_events(False)

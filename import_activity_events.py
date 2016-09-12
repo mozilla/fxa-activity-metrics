@@ -5,7 +5,7 @@
 import os
 import json
 import time
-import datetime
+from datetime import datetime
 import tempfile
 import urlparse
 
@@ -38,6 +38,7 @@ EVENTS_PREFIX = "fxa-retention/data/"
 EVENTS_PREFIX_FIXED = "fxa-retention/data-rfkelly/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "events-{day}.csv"
 EVENTS_FILE_FIXED_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX_FIXED + "events-{day}.fixed.csv"
+EVENTS_BEGIN = datetime.strptime("2016-09-02", "%Y-%m-%d")
 
 # We import each into a temporary table and then
 # INSERT them into the activity_events table
@@ -121,7 +122,7 @@ Q_INSERT_EVENTS = """
 """
 
 def import_events(force_reload=False):
-    b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
+    b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
     db.run(Q_CREATE_EVENTS_TABLE)
@@ -131,12 +132,14 @@ def import_events(force_reload=False):
     for key in b.list(prefix=EVENTS_PREFIX):
         filename = os.path.basename(key.name)
         day = "-".join(filename[:-4].split("-")[1:])
-        days.append(day)
-        if force_reload:
-            days_to_load.append(day)
-        else:
-            if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
+        date = datetime.strptime(day, "%Y-%m-%d")
+        if date >= EVENTS_BEGIN:
+            days.append(day)
+            if force_reload:
                 days_to_load.append(day)
+            else:
+                if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
+                    days_to_load.append(day)
     days_to_load.sort(reverse=True)
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
     db.run("BEGIN TRANSACTION")
@@ -151,20 +154,7 @@ def import_events(force_reload=False):
             db.run(Q_CLEAR_DAY.format(day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
-            try:
-                # Attempt #1: original data
-                db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
-            except Exception:
-                print "FAILED", day, "TRYING FIXED DATA"
-                s3path = EVENTS_FILE_FIXED_URL.format(day=day)
-                try:
-                    # Attempt #2: previously-fixed data
-                    db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
-                except Exception:
-                    print "FAILED, FIXING DATA", day
-                    # Attempt #3: fix the data first
-                    fixup_event_data(b, day)
-                    db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
+            db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
             # Populate the activity_events table
             db.run(Q_INSERT_EVENTS)
             # Print the timestamps for sanity-checking
@@ -177,21 +167,6 @@ def import_events(force_reload=False):
         raise
     else:
         db.run("COMMIT TRANSACTION")
-
-def fixup_event_data(b, day):
-    """Download a data file, remove invalid lines, and re-upload"""
-    orig_key = b.get_key(urlparse.urlparse(EVENTS_FILE_URL.format(day=day)).path[1:])
-    assert orig_key is not None
-    fixed_key = b.new_key(urlparse.urlparse(EVENTS_FILE_FIXED_URL.format(day=day)).path[1:])
-    with tempfile.TemporaryFile() as tmp_orig:
-        orig_key.get_contents_to_file(tmp_orig)
-        tmp_orig.seek(0)
-        with tempfile.TemporaryFile() as tmp_fixed:
-            for ln in tmp_orig.xreadlines():
-                if len(ln.split(",")) == 7:
-                    tmp_fixed.write(ln)
-            tmp_fixed.seek(0)
-            fixed_key.set_contents_from_file(tmp_fixed)
 
 if __name__ == "__main__":
     import_events()

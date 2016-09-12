@@ -197,6 +197,36 @@ Q_UPDATE_NEW_ACCOUNT = """
     ) AS created
     WHERE flow_metadata.flow_id = created.flow_id;
 """
+Q_UPDATE_METRICS_CONTEXT = """
+    UPDATE flow_metadata
+    SET
+      -- See https://github.com/mozilla/fxa-content-server/issues/4135
+      context = (CASE WHEN flow_metadata.context = '' THEN metrics_context.context ELSE flow_metadata.context END),
+      entrypoint = (CASE WHEN flow_metadata.entrypoint = '' THEN metrics_context.entrypoint ELSE flow_metadata.entrypoint END),
+      migration = (CASE WHEN flow_metadata.migration = '' THEN metrics_context.migration ELSE flow_metadata.migration END),
+      service = (CASE WHEN flow_metadata.service = '' THEN metrics_context.service ELSE flow_metadata.service END),
+      utm_campaign = (CASE WHEN flow_metadata.utm_campaign = '' THEN metrics_context.utm_campaign ELSE flow_metadata.utm_campaign END),
+      utm_content = (CASE WHEN flow_metadata.utm_content = '' THEN metrics_context.utm_content ELSE flow_metadata.utm_content END),
+      utm_medium = (CASE WHEN flow_metadata.utm_medium = '' THEN metrics_context.utm_medium ELSE flow_metadata.utm_medium END),
+      utm_source = (CASE WHEN flow_metadata.utm_source = '' THEN metrics_context.utm_source ELSE flow_metadata.utm_source END),
+      utm_term = (CASE WHEN flow_metadata.utm_term = '' THEN metrics_context.utm_term ELSE flow_metadata.utm_term END)
+    FROM (
+      SELECT
+        flow_id,
+        MAX(context) AS context,
+        MAX(entrypoint) AS entrypoint,
+        MAX(migration) AS migration,
+        MAX(service) AS service,
+        MAX(utm_campaign) AS utm_campaign,
+        MAX(utm_content) AS utm_content,
+        MAX(utm_medium) AS utm_medium,
+        MAX(utm_source) AS utm_source,
+        MAX(utm_term) AS utm_term
+      FROM temporary_raw_flow_data
+      GROUP BY flow_id
+    ) AS metrics_context
+    WHERE flow_metadata.flow_id = metrics_context.flow_id;
+"""
 
 Q_INSERT_EVENTS = """
     INSERT INTO flow_events (
@@ -255,6 +285,7 @@ def import_events(force_reload=False):
             db.run(Q_UPDATE_DURATION)
             db.run(Q_UPDATE_COMPLETED)
             db.run(Q_UPDATE_NEW_ACCOUNT)
+            db.run(Q_UPDATE_METRICS_CONTEXT)
             # Populate the flow_events table
             db.run(Q_INSERT_EVENTS)
             # Print the timestamps for sanity-checking.

@@ -60,14 +60,14 @@ Q_CREATE_CSV_TABLE = """
 
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS activity_events (
-      timestamp TIMESTAMP NOT NULL SORTKEY,
-      uid VARCHAR(64) NOT NULL DISTKEY,
-      type VARCHAR(30) NOT NULL,
-      device_id VARCHAR(32),
-      service VARCHAR(30),
-      ua_browser VARCHAR(30),
-      ua_version VARCHAR(30),
-      ua_os VARCHAR(30)
+      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+      type VARCHAR(30) NOT NULL ENCODE lzo,
+      device_id VARCHAR(32) ENCODE lzo,
+      service VARCHAR(30) ENCODE lzo,
+      ua_browser VARCHAR(30) ENCODE lzo,
+      ua_version VARCHAR(30) ENCODE lzo,
+      ua_os VARCHAR(30) ENCODE lzo
     );
 """
 

@@ -61,35 +61,35 @@ Q_CREATE_CSV_TABLE = """
 """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
-      flow_id VARCHAR(64) NOT NULL UNIQUE,
-      begin_time TIMESTAMP NOT NULL SORTKEY,
+      flow_id VARCHAR(64) NOT NULL UNIQUE ENCODE lzo,
+      begin_time TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
-      duration INTEGER NOT NULL DEFAULT 0,
-      completed BOOLEAN NOT NULL DEFAULT FALSE,
-      new_account BOOLEAN NOT NULL DEFAULT FALSE,
-      ua_browser VARCHAR(40),
-      ua_version VARCHAR(40),
-      ua_os VARCHAR(40),
-      context VARCHAR(40),
-      entrypoint VARCHAR(40),
-      migration VARCHAR(40),
-      service VARCHAR(40),
-      utm_campaign VARCHAR(40),
-      utm_content VARCHAR(40),
-      utm_medium VARCHAR(40),
-      utm_source VARCHAR(40),
-      utm_term VARCHAR(40)
+      duration INTEGER NOT NULL DEFAULT 0 ENCODE lzo,
+      completed BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
+      new_account BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
+      ua_browser VARCHAR(40) ENCODE lzo,
+      ua_version VARCHAR(40) ENCODE lzo,
+      ua_os VARCHAR(40) ENCODE lzo,
+      context VARCHAR(40) ENCODE lzo,
+      entrypoint VARCHAR(40) ENCODE lzo,
+      migration VARCHAR(40) ENCODE lzo,
+      service VARCHAR(40) ENCODE lzo,
+      utm_campaign VARCHAR(40) ENCODE lzo,
+      utm_content VARCHAR(40) ENCODE lzo,
+      utm_medium VARCHAR(40) ENCODE lzo,
+      utm_source VARCHAR(40) ENCODE lzo,
+      utm_term VARCHAR(40) ENCODE lzo
     );
 """
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_events (
-      timestamp TIMESTAMP NOT NULL SORTKEY,
+      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally flow_time would be type INTERVAL
       -- but redshift doesn't support that.
-      flow_time INTEGER NOT NULL,
-      flow_id VARCHAR(64) NOT NULL DISTKEY,
-      type VARCHAR(30) NOT NULL
+      flow_time INTEGER NOT NULL ENCODE lzo,
+      flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+      type VARCHAR(30) NOT NULL ENCODE lzo
     );
 """
 

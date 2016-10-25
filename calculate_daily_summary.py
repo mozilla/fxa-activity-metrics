@@ -26,9 +26,13 @@ DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".fo
 
 Q_DAILY_DEVICES_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS daily_activity_per_device (
-      day DATE NOT NULL SORTKEY,
-      uid VARCHAR(64) NOT NULL DISTKEY,
-      device_id VARCHAR(32) NOT NULL
+      day DATE NOT NULL SORTKEY ENCODE lzo,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+      device_id VARCHAR(32) NOT NULL ENCODE lzo,
+      service VARCHAR(30) ENCODE lzo,
+      ua_browser VARCHAR(30) ENCODE lzo,
+      ua_version VARCHAR(30) ENCODE lzo,
+      ua_os VARCHAR(30) ENCODE lzo
     );
 """
 
@@ -39,8 +43,11 @@ Q_DAILY_DEVICES_CLEAR = """
 """
 
 Q_DAILY_DEVICES_SUMMARIZE = """
-    INSERT INTO daily_activity_per_device (day, uid, device_id)
-    SELECT DISTINCT timestamp::DATE as day, uid, device_id
+    INSERT INTO daily_activity_per_device
+      (day, uid, device_id, service, ua_browser, ua_version, ua_os)
+    SELECT DISTINCT
+      timestamp::DATE as day,
+      uid, device_id, service, ua_browser, ua_version, ua_os
     FROM activity_events
     WHERE device_id != ''
     AND timestamp::DATE >= '{day_from}'::DATE
@@ -48,15 +55,17 @@ Q_DAILY_DEVICES_SUMMARIZE = """
     ORDER BY 1;
 """
 
-# For the daily multi-device-users summary,
-# we maintain a table of (day, uid) pairs
+# For the daily multi-device-users summary, we maintain
+# a table of (day, uid, device_now, device_prev) tuples
 # based on whether that user had multiple devices
-# active in the last five days.
+# active in the last seven days.
 
 Q_MD_USERS_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS daily_multi_device_users (
-      day DATE NOT NULL SORTKEY,
-      uid VARCHAR(64) NOT NULL DISTKEY
+      day DATE NOT NULL SORTKEY ENCODE lzo,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+      device_now VARCHAR(32) NOT NULL ENCODE lzo,
+      device_prev VARCHAR(32) NOT NULL ENCODE lzo
     );
 """
 
@@ -67,15 +76,15 @@ Q_MD_USERS_CLEAR = """
 """
 
 Q_MD_USERS_SUMMARIZE = """
-    INSERT INTO daily_multi_device_users (day, uid)
-    SELECT DISTINCT present.day, present.uid
+    INSERT INTO daily_multi_device_users (day, uid, device_now, device_prev)
+    SELECT DISTINCT present.day, present.uid, present.device_id, past.device_id
     FROM daily_activity_per_device as present
     INNER JOIN daily_activity_per_device as past
     ON
       present.uid = past.uid
       AND present.device_id != past.device_id
       AND past.day <= present.day
-      AND past.day >= (present.day - '5 days'::INTERVAL)
+      AND past.day >= (present.day - '7 days'::INTERVAL)
     WHERE present.day >= '{day_from}'::DATE
     AND present.day <= '{day_until}'::DATE
     ORDER BY 1;

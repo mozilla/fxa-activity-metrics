@@ -29,10 +29,10 @@ Q_DAILY_DEVICES_CREATE_TABLE = """
       day DATE NOT NULL SORTKEY ENCODE lzo,
       uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       device_id VARCHAR(32) NOT NULL ENCODE lzo,
-      service VARCHAR(30) ENCODE lzo,
-      ua_browser VARCHAR(30) ENCODE lzo,
-      ua_version VARCHAR(30) ENCODE lzo,
-      ua_os VARCHAR(30) ENCODE lzo
+      service VARCHAR(40) ENCODE lzo,
+      ua_browser VARCHAR(40) ENCODE lzo,
+      ua_version VARCHAR(40) ENCODE lzo,
+      ua_os VARCHAR(40) ENCODE lzo
     );
 """
 

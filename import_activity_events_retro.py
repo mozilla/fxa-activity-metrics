@@ -34,11 +34,8 @@ DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".fo
 # and uploading the fixed copy to a new location.
 
 EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
-EVENTS_PREFIX = "fxa-retention/data/"
-EVENTS_PREFIX_FIXED = "fxa-retention/data-rfkelly/"
+EVENTS_PREFIX = "whd/fxa-retention/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "events-{day}.csv"
-EVENTS_FILE_FIXED_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX_FIXED + "events-{day}.fixed.csv"
-EVENTS_BEGIN = datetime.strptime("2016-09-02", "%Y-%m-%d")
 
 # We import each into a temporary table and then
 # INSERT them into the activity_events table
@@ -55,19 +52,6 @@ Q_CREATE_CSV_TABLE = """
       type VARCHAR(30) NOT NULL,
       service VARCHAR(40),
       device_id VARCHAR(32)
-    );
-"""
-
-Q_CREATE_EVENTS_TABLE = """
-    CREATE TABLE IF NOT EXISTS activity_events (
-      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      type VARCHAR(30) NOT NULL ENCODE lzo,
-      device_id VARCHAR(32) ENCODE lzo,
-      service VARCHAR(40) ENCODE lzo,
-      ua_browser VARCHAR(40) ENCODE lzo,
-      ua_version VARCHAR(40) ENCODE lzo,
-      ua_os VARCHAR(40) ENCODE lzo
     );
 """
 
@@ -125,21 +109,24 @@ def import_events(force_reload=False):
     b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
-    db.run(Q_CREATE_EVENTS_TABLE)
+    # Deliberately don't create the activity_events table here,
+    # to avoid duplicating the schema in 2 places. This script
+    # will only run against a pre-created activity_events table.
     days = []
     days_to_load = []
     # Find all the days available for loading.
     for key in b.list(prefix=EVENTS_PREFIX):
         filename = os.path.basename(key.name)
+        # There are log files in S3, we don't want to process those
+        if not filename.endswith(".csv"):
+            continue
         day = "-".join(filename[:-4].split("-")[1:])
-        date = datetime.strptime(day, "%Y-%m-%d")
-        if date >= EVENTS_BEGIN:
-            days.append(day)
-            if force_reload:
+        days.append(day)
+        if force_reload:
+            days_to_load.append(day)
+        else:
+            if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
                 days_to_load.append(day)
-            else:
-                if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
-                    days_to_load.append(day)
     days_to_load.sort(reverse=True)
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
     db.run("BEGIN TRANSACTION")
@@ -169,4 +156,4 @@ def import_events(force_reload=False):
         db.run("COMMIT TRANSACTION")
 
 if __name__ == "__main__":
-    import_events()
+    import_events(True)

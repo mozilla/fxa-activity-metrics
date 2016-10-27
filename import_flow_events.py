@@ -65,7 +65,7 @@ Q_CREATE_METADATA_TABLE = """
       begin_time TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
-      duration INTEGER NOT NULL DEFAULT 0 ENCODE lzo,
+      duration BIGINT NOT NULL DEFAULT 0 ENCODE lzo,
       completed BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
       new_account BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
       ua_browser VARCHAR(40) ENCODE lzo,
@@ -87,7 +87,7 @@ Q_CREATE_EVENTS_TABLE = """
       timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally flow_time would be type INTERVAL
       -- but redshift doesn't support that.
-      flow_time INTEGER NOT NULL ENCODE lzo,
+      flow_time BIGINT NOT NULL ENCODE lzo,
       flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       type VARCHAR(30) NOT NULL ENCODE lzo
     );

@@ -42,7 +42,7 @@ Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_flow_data;"
 Q_CREATE_CSV_TABLE = """
     CREATE TABLE IF NOT EXISTS temporary_raw_flow_data (
       timestamp BIGINT NOT NULL SORTKEY,
-      type VARCHAR(30) NOT NULL,
+      type VARCHAR(64) NOT NULL,
       flow_id VARCHAR(64) NOT NULL DISTKEY,
       flow_time BIGINT NOT NULL,
       ua_browser VARCHAR(40),
@@ -89,7 +89,7 @@ Q_CREATE_EVENTS_TABLE = """
       -- but redshift doesn't support that.
       flow_time BIGINT NOT NULL ENCODE lzo,
       flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      type VARCHAR(30) NOT NULL ENCODE lzo
+      type VARCHAR(64) NOT NULL ENCODE lzo
     );
 """
 

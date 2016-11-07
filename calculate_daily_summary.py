@@ -105,6 +105,12 @@ Q_GET_LAST_AVAILABLE_DAY = """
     FROM activity_events;
 """
 
+Q_VACUUM_TABLES = """
+    END;
+    VACUUM FULL daily_activity_per_device;
+    VACUUM FULL daily_multi_device_users;
+"""
+
 def summarize_events(day_from=None, day_until=None):
     db = postgres.Postgres(DB)
     db.run("BEGIN TRANSACTION")
@@ -138,6 +144,8 @@ def summarize_events(day_from=None, day_until=None):
         raise
     else:
         db.run("COMMIT TRANSACTION")
+
+    db.run(Q_VACUUM_TABLES)
 
 if __name__ == "__main__":
     summarize_events()

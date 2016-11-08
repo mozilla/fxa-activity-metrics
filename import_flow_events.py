@@ -243,6 +243,12 @@ Q_INSERT_EVENTS = """
     FROM temporary_raw_flow_data;
 """
 
+Q_VACUUM_TABLES = """
+    END;
+    VACUUM FULL flow_events;
+    VACUUM FULL flow_metadata;
+"""
+
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
@@ -298,6 +304,8 @@ def import_events(force_reload=False):
         raise
     else:
         db.run("COMMIT TRANSACTION")
+
+    db.run(Q_VACUUM_TABLES)
 
 if __name__ == "__main__":
     import_events(False)

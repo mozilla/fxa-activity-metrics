@@ -48,15 +48,15 @@ Q_CREATE_CSV_TABLE = """
       ua_browser VARCHAR(40),
       ua_version VARCHAR(40),
       ua_os VARCHAR(40),
-      context VARCHAR(40),
-      entrypoint VARCHAR(40),
-      migration VARCHAR(40),
-      service VARCHAR(40),
-      utm_campaign VARCHAR(40),
-      utm_content VARCHAR(40),
-      utm_medium VARCHAR(40),
-      utm_source VARCHAR(40),
-      utm_term VARCHAR(40)
+      context VARCHAR(100),
+      entrypoint VARCHAR(100),
+      migration VARCHAR(100),
+      service VARCHAR(100),
+      utm_campaign VARCHAR(100),
+      utm_content VARCHAR(100),
+      utm_medium VARCHAR(100),
+      utm_source VARCHAR(100),
+      utm_term VARCHAR(100)
     );
 """
 Q_CREATE_METADATA_TABLE = """
@@ -71,15 +71,15 @@ Q_CREATE_METADATA_TABLE = """
       ua_browser VARCHAR(40) ENCODE lzo,
       ua_version VARCHAR(40) ENCODE lzo,
       ua_os VARCHAR(40) ENCODE lzo,
-      context VARCHAR(40) ENCODE lzo,
-      entrypoint VARCHAR(40) ENCODE lzo,
-      migration VARCHAR(40) ENCODE lzo,
-      service VARCHAR(40) ENCODE lzo,
-      utm_campaign VARCHAR(40) ENCODE lzo,
-      utm_content VARCHAR(40) ENCODE lzo,
-      utm_medium VARCHAR(40) ENCODE lzo,
-      utm_source VARCHAR(40) ENCODE lzo,
-      utm_term VARCHAR(40) ENCODE lzo
+      context VARCHAR(100) ENCODE lzo,
+      entrypoint VARCHAR(100) ENCODE lzo,
+      migration VARCHAR(100) ENCODE lzo,
+      service VARCHAR(100) ENCODE lzo,
+      utm_campaign VARCHAR(100) ENCODE lzo,
+      utm_content VARCHAR(100) ENCODE lzo,
+      utm_medium VARCHAR(100) ENCODE lzo,
+      utm_source VARCHAR(100) ENCODE lzo,
+      utm_term VARCHAR(100) ENCODE lzo
     );
 """
 Q_CREATE_EVENTS_TABLE = """

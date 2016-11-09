@@ -95,7 +95,8 @@ Q_COPY_CSV = """
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
-    FORMAT AS CSV;
+    FORMAT AS CSV
+    TRUNCATECOLUMNS;
 """
 
 Q_INSERT_EVENTS = """

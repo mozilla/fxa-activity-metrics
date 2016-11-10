@@ -22,3 +22,4 @@ import: | $(ENV)/COMPLETE
 .PHONY: summarize
 summarize: | $(ENV)/COMPLETE
 	$(ENV)/bin/python ./calculate_daily_summary.py
+	$(ENV)/bin/python ./calculate_monthly_summary.py

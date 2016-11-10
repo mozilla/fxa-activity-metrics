@@ -166,7 +166,7 @@ Q_INSERT_METADATA = """
       utm_source,
       utm_term
     FROM temporary_raw_flow_data
-    WHERE type = 'flow.begin';
+    WHERE type LIKE 'flow%begin';
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata

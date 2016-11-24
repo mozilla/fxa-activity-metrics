@@ -89,23 +89,31 @@ Q_CREATE_EVENTS_TABLE = """
       -- but redshift doesn't support that.
       flow_time BIGINT NOT NULL ENCODE lzo,
       flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      type VARCHAR(64) NOT NULL ENCODE lzo
+      type VARCHAR(64) NOT NULL ENCODE lzo,
+      export_date DATE NOT NULL ENCODE lzo
     );
 """
 
 Q_CHECK_FOR_DAY = """
     SELECT timestamp FROM flow_events
-    WHERE timestamp::DATE = '{day}'::DATE
+    WHERE timestamp::DATE <= '{day}'::DATE + '1 day'::INTERVAL
+      AND timestamp::DATE >= '{day}'::DATE - '1 day'::INTERVAL
+      AND export_date = '{day}'::DATE;
     LIMIT 1;
 """
 
-Q_CLEAR_DAY_METADATA = """
-    DELETE FROM flow_metadata
-    WHERE begin_time::DATE = '{day}'::DATE;
-"""
 Q_CLEAR_DAY_EVENTS = """
     DELETE FROM flow_events
-    WHERE timestamp::DATE = '{day}'::DATE;
+    WHERE timestamp::DATE <= '{day}'::DATE + '1 day'::INTERVAL
+      AND timestamp::DATE >= '{day}'::DATE - '1 day'::INTERVAL
+      AND export_date = '{day}'::DATE;
+"""
+Q_CLEAR_DAY_METADATA = """
+    DELETE flow_metadata
+    FROM flow_metadata AS m
+    LEFT JOIN flow_events AS e
+      ON m.flow_id = e.flow_id
+    WHERE e.flow_id IS NULL;
 """
 
 Q_COPY_CSV = """
@@ -165,8 +173,13 @@ Q_INSERT_METADATA = """
       utm_medium,
       utm_source,
       utm_term
-    FROM temporary_raw_flow_data
-    WHERE type LIKE 'flow%begin';
+    FROM temporary_raw_flow_data AS d
+    WHERE type LIKE 'flow%begin'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM flow_metadata AS m
+        WHERE m.flow_id = d.flow_id
+      );
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
@@ -234,13 +247,15 @@ Q_INSERT_EVENTS = """
       timestamp,
       flow_time,
       flow_id,
-      type
+      type,
+      export_date
     )
     SELECT
       'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
       flow_time,
       flow_id,
-      type
+      type,
+      '{day}'::DATE
     FROM temporary_raw_flow_data;
 """
 
@@ -279,8 +294,8 @@ def import_events(force_reload=False):
             # Create the temporary table
             db.run(Q_CREATE_CSV_TABLE)
             # Clear any existing data for the day, to avoid duplicates.
-            db.run(Q_CLEAR_DAY_METADATA.format(day=day))
             db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
+            db.run(Q_CLEAR_DAY_METADATA)
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(
@@ -294,7 +309,7 @@ def import_events(force_reload=False):
             db.run(Q_UPDATE_NEW_ACCOUNT)
             db.run(Q_UPDATE_METRICS_CONTEXT)
             # Populate the flow_events table
-            db.run(Q_INSERT_EVENTS)
+            db.run(Q_INSERT_EVENTS.format(day=day))
             # Print the timestamps for sanity-checking.
             print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
             print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")

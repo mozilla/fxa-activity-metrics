@@ -184,9 +184,9 @@ Q_UPDATE_COMPLETED = """
     FROM (
       SELECT flow_id
       FROM temporary_raw_flow_data
-      WHERE type = 'account.signed'
-    ) AS signed
-    WHERE flow_metadata.flow_id = signed.flow_id;
+      WHERE type = 'flow.complete'
+    ) AS complete
+    WHERE flow_metadata.flow_id = complete.flow_id;
 """
 Q_UPDATE_NEW_ACCOUNT = """
     UPDATE flow_metadata

@@ -79,7 +79,8 @@ Q_CREATE_METADATA_TABLE = """
       utm_content VARCHAR(40) ENCODE lzo,
       utm_medium VARCHAR(40) ENCODE lzo,
       utm_source VARCHAR(40) ENCODE lzo,
-      utm_term VARCHAR(40) ENCODE lzo
+      utm_term VARCHAR(40) ENCODE lzo,
+      export_date DATE NOT NULL ENCODE lzo
     );
 """
 Q_CREATE_EVENTS_TABLE = """
@@ -109,11 +110,10 @@ Q_CLEAR_DAY_EVENTS = """
       AND export_date = '{day}'::DATE;
 """
 Q_CLEAR_DAY_METADATA = """
-    DELETE flow_metadata
-    FROM flow_metadata AS m
-    LEFT JOIN flow_events AS e
-      ON m.flow_id = e.flow_id
-    WHERE e.flow_id IS NULL;
+    DELETE FROM flow_metadata
+    WHERE begin_time::DATE <= '{day}'::DATE + '1 day'::INTERVAL
+      AND begin_time::DATE >= '{day}'::DATE - '1 day'::INTERVAL
+      AND export_date = '{day}'::DATE;
 """
 
 Q_COPY_CSV = """
@@ -156,7 +156,8 @@ Q_INSERT_METADATA = """
       utm_content,
       utm_medium,
       utm_source,
-      utm_term
+      utm_term,
+      export_date
     )
     SELECT
       flow_id,
@@ -172,21 +173,18 @@ Q_INSERT_METADATA = """
       utm_content,
       utm_medium,
       utm_source,
-      utm_term
+      utm_term,
+      '{day}'::DATE
     FROM temporary_raw_flow_data AS d
-    WHERE type LIKE 'flow%begin'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM flow_metadata AS m
-        WHERE m.flow_id = d.flow_id
-      );
+    WHERE type LIKE 'flow%begin';
 """
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
     SET duration = durations.flow_time
     FROM (
       SELECT flow_id, MAX(flow_time) AS flow_time
-      FROM temporary_raw_flow_data
+      FROM flow_events
+      WHERE "timestamp" >= '{day}'::DATE AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
       GROUP BY flow_id
     ) AS durations
     WHERE flow_metadata.flow_id = durations.flow_id;
@@ -196,8 +194,9 @@ Q_UPDATE_COMPLETED = """
     SET completed = TRUE
     FROM (
       SELECT flow_id
-      FROM temporary_raw_flow_data
+      FROM flow_events
       WHERE type = 'account.signed'
+      AND "timestamp" >= '{day}'::DATE AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
     ) AS signed
     WHERE flow_metadata.flow_id = signed.flow_id;
 """
@@ -206,8 +205,9 @@ Q_UPDATE_NEW_ACCOUNT = """
     SET new_account = TRUE
     FROM (
       SELECT flow_id
-      FROM temporary_raw_flow_data
+      FROM flow_events
       WHERE type = 'account.created'
+      AND "timestamp" >= '{day}'::DATE AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
     ) AS created
     WHERE flow_metadata.flow_id = created.flow_id;
 """

@@ -176,7 +176,9 @@ Q_UPDATE_DURATION = """
       FROM temporary_raw_flow_data
       GROUP BY flow_id
     ) AS durations
-    WHERE flow_metadata.flow_id = durations.flow_id;
+    WHERE flow_metadata.flow_id = durations.flow_id
+    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_COMPLETED = """
     UPDATE flow_metadata
@@ -186,7 +188,9 @@ Q_UPDATE_COMPLETED = """
       FROM temporary_raw_flow_data
       WHERE type = 'flow.complete'
     ) AS complete
-    WHERE flow_metadata.flow_id = complete.flow_id;
+    WHERE flow_metadata.flow_id = complete.flow_id
+    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_NEW_ACCOUNT = """
     UPDATE flow_metadata
@@ -196,7 +200,9 @@ Q_UPDATE_NEW_ACCOUNT = """
       FROM temporary_raw_flow_data
       WHERE type = 'account.created'
     ) AS created
-    WHERE flow_metadata.flow_id = created.flow_id;
+    WHERE flow_metadata.flow_id = created.flow_id
+    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_METRICS_CONTEXT = """
     UPDATE flow_metadata
@@ -226,7 +232,9 @@ Q_UPDATE_METRICS_CONTEXT = """
       FROM temporary_raw_flow_data
       GROUP BY flow_id
     ) AS metrics_context
-    WHERE flow_metadata.flow_id = metrics_context.flow_id;
+    WHERE flow_metadata.flow_id = metrics_context.flow_id
+    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 
 Q_INSERT_EVENTS = """
@@ -289,10 +297,10 @@ def import_events(force_reload=False):
             ))
             # Populate the flow_metadata table
             db.run(Q_INSERT_METADATA)
-            db.run(Q_UPDATE_DURATION)
-            db.run(Q_UPDATE_COMPLETED)
-            db.run(Q_UPDATE_NEW_ACCOUNT)
-            db.run(Q_UPDATE_METRICS_CONTEXT)
+            db.run(Q_UPDATE_DURATION.format(day=day))
+            db.run(Q_UPDATE_COMPLETED.format(day=day))
+            db.run(Q_UPDATE_NEW_ACCOUNT.format(day=day))
+            db.run(Q_UPDATE_METRICS_CONTEXT.format(day=day))
             # Populate the flow_events table
             db.run(Q_INSERT_EVENTS)
             # Print the timestamps for sanity-checking.

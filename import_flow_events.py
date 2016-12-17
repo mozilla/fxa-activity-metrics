@@ -189,8 +189,8 @@ Q_UPDATE_DURATION = """
       GROUP BY flow_id
     ) AS durations
     WHERE flow_metadata.flow_id = durations.flow_id
-    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_COMPLETED = """
     UPDATE flow_metadata
@@ -203,8 +203,8 @@ Q_UPDATE_COMPLETED = """
         AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
     ) AS complete
     WHERE flow_metadata.flow_id = complete.flow_id
-    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_NEW_ACCOUNT = """
     UPDATE flow_metadata
@@ -217,8 +217,8 @@ Q_UPDATE_NEW_ACCOUNT = """
         AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
     ) AS created
     WHERE flow_metadata.flow_id = created.flow_id
-    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 Q_UPDATE_METRICS_CONTEXT = """
     UPDATE flow_metadata
@@ -249,8 +249,8 @@ Q_UPDATE_METRICS_CONTEXT = """
       GROUP BY flow_id
     ) AS metrics_context
     WHERE flow_metadata.flow_id = metrics_context.flow_id
-    AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-    AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
+      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 
 Q_INSERT_EVENTS = """

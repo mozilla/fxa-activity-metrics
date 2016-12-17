@@ -61,7 +61,7 @@ Q_CREATE_CSV_TABLE = """
 """
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata (
-      flow_id VARCHAR(64) NOT NULL UNIQUE ENCODE lzo,
+      flow_id VARCHAR(64) NOT NULL UNIQUE DISTKEY ENCODE lzo,
       begin_time TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.

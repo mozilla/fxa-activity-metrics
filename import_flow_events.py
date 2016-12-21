@@ -265,7 +265,7 @@ Q_INSERT_EVENTS = """
       'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
       flow_time,
       flow_id,
-      type,
+      (CASE WHEN type LIKE 'flow.%.begin' THEN 'flow.begin' ELSE type END),
       '{day}'::DATE
     FROM temporary_raw_flow_data;
 """

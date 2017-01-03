@@ -41,9 +41,9 @@ EVENTS_FILE_FIXED_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX_FIXED + "e
 EVENTS_BEGIN = datetime.strptime("2016-09-02", "%Y-%m-%d")
 
 SAMPLE_RATES = (
-    {"percent":10, "months":24},
-    {"percent":50, "months":6},
-    {"percent":100, "months":3}
+    {"percent":10, "months":24, "table_suffix":"_sampled_10"},
+    {"percent":50, "months":6, "table_suffix":"_sampled_50"},
+    {"percent":100, "months":3, "table_suffix":""}
 )
 
 # We import each into a temporary table and then
@@ -65,7 +65,7 @@ Q_CREATE_CSV_TABLE = """
 """
 
 Q_CREATE_EVENTS_TABLE = """
-    CREATE TABLE IF NOT EXISTS activity_events_{sample_rate} (
+    CREATE TABLE IF NOT EXISTS activity_events{table_suffix} (
       timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       type VARCHAR(30) NOT NULL ENCODE lzo,
@@ -78,13 +78,13 @@ Q_CREATE_EVENTS_TABLE = """
 """
 
 Q_CHECK_FOR_DAY = """
-    SELECT timestamp FROM activity_events_{sample_rate}
+    SELECT timestamp FROM activity_events_sampled_10
     WHERE timestamp::DATE = '{day}'::DATE
     LIMIT 1;
 """
 
 Q_CLEAR_DAY = """
-    DELETE FROM activity_events_{sample_rate}
+    DELETE FROM activity_events{table_suffix}
     WHERE timestamp::DATE = '{day}'::DATE;
 """
 
@@ -106,7 +106,7 @@ Q_COPY_CSV = """
 """
 
 Q_INSERT_EVENTS = """
-    INSERT INTO activity_events_{sample_rate} (
+    INSERT INTO activity_events{table_suffix} (
       timestamp,
       uid,
       type,
@@ -133,13 +133,13 @@ Q_INSERT_EVENTS = """
 """
 
 Q_DELETE_EVENTS = """
-    DELETE FROM activity_events_{sample_rate}
-	WHERE timestamp::DATE >= '{date}'::DATE + '{months} months'::INTERVAL;
+    DELETE FROM activity_events{table_suffix}
+    WHERE timestamp::DATE >= '{date}'::DATE + '{months} months'::INTERVAL;
 """
 
 Q_VACUUM_TABLES = """
     END;
-    VACUUM FULL activity_events_{sample_rate};
+    VACUUM FULL activity_events{table_suffix};
 """
 
 def import_events(force_reload=False):
@@ -147,7 +147,7 @@ def import_events(force_reload=False):
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
     for rate in SAMPLE_RATES:
-        db.run(Q_CREATE_EVENTS_TABLE.format(sample_rate=rate.percent))
+        db.run(Q_CREATE_EVENTS_TABLE.format(table_suffix=rate.table_suffix))
     days = []
     days_to_load = []
     # Find all the days available for loading.
@@ -161,7 +161,7 @@ def import_events(force_reload=False):
                 days_to_load.append(day)
             else:
                 # It's faster to check the 10% sampled table...
-                if not db.one(Q_CHECK_FOR_DAY.format(sample_rate=10, day=day)):
+                if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
                     days_to_load.append(day)
     days_to_load.sort(reverse=True)
     print "LOADING {} DAYS OF DATA".format(len(days_to_load))
@@ -175,20 +175,20 @@ def import_events(force_reload=False):
             db.run(Q_CREATE_CSV_TABLE)
             # Clear any existing data for the day, to avoid duplicates
             for rate in SAMPLE_RATES:
-                db.run(Q_CLEAR_DAY.format(sample_rate=rate.percent, day=day))
+                db.run(Q_CLEAR_DAY.format(table_suffix=rate.table_suffix, day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
             # Populate the activity_events table
             for rate in SAMPLE_RATES:
-                db.run(Q_INSERT_EVENTS.format(sample_rate=rate.percent, modulo=100/rate.percent))
+                db.run(Q_INSERT_EVENTS.format(table_suffix=rate.table_suffix, modulo=100/rate.percent))
             # Print the timestamps for sanity-checking
             print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_activity_data")
             print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_activity_data")
             # Drop the temporary table
             db.run(Q_DROP_CSV_TABLE)
         for rate in SAMPLE_RATES:
-            db.run(Q_DELETE_EVENTS.format(sample_rate=rate.percent, date=days_to_load[0], months=rate.months))
+            db.run(Q_DELETE_EVENTS.format(table_suffix=rate.table_suffix, date=days_to_load[0], months=rate.months))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise
@@ -196,7 +196,7 @@ def import_events(force_reload=False):
         db.run("COMMIT TRANSACTION")
 
     for rate in SAMPLE_RATES:
-        db.run(Q_VACUUM_TABLES.format(sample_rate=rate.percent))
+        db.run(Q_VACUUM_TABLES.format(table_suffix=rate.table_suffix))
 
 if __name__ == "__main__":
     import_events()

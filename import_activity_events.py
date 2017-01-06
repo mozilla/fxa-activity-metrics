@@ -126,10 +126,10 @@ Q_INSERT_EVENTS = """
       ua_version,
       ua_os
     FROM (
-      SELECT *, ROW_NUMBER() OVER(ORDER BY timestamp, uid, type) AS row
+      SELECT *, STRTOL(SUBSTRING(uid FROM 0 FOR 8), 16) % 100 AS cohort
       FROM temporary_raw_activity_data
     )
-    WHERE row % {modulo} = 0;
+    WHERE cohort <= {sample_rate};
 """
 
 Q_DELETE_EVENTS = """
@@ -181,7 +181,7 @@ def import_events(force_reload=False):
             db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
             # Populate the activity_events table
             for rate in SAMPLE_RATES:
-                db.run(Q_INSERT_EVENTS.format(table_suffix=rate.table_suffix, modulo=100/rate.percent))
+                db.run(Q_INSERT_EVENTS.format(table_suffix=rate.table_suffix, sample_rate=rate.percent))
             # Print the timestamps for sanity-checking
             print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_activity_data")
             print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_activity_data")

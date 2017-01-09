@@ -147,7 +147,7 @@ def import_events(force_reload=False):
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
     for rate in SAMPLE_RATES:
-        db.run(Q_CREATE_EVENTS_TABLE.format(table_suffix=rate.table_suffix))
+        db.run(Q_CREATE_EVENTS_TABLE.format(table_suffix=rate["table_suffix"]))
     days = []
     days_to_load = []
     # Find all the days available for loading.
@@ -175,20 +175,20 @@ def import_events(force_reload=False):
             db.run(Q_CREATE_CSV_TABLE)
             # Clear any existing data for the day, to avoid duplicates
             for rate in SAMPLE_RATES:
-                db.run(Q_CLEAR_DAY.format(table_suffix=rate.table_suffix, day=day))
+                db.run(Q_CLEAR_DAY.format(table_suffix=rate["table_suffix"], day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
             # Populate the activity_events table
             for rate in SAMPLE_RATES:
-                db.run(Q_INSERT_EVENTS.format(table_suffix=rate.table_suffix, sample_rate=rate.percent))
+                db.run(Q_INSERT_EVENTS.format(table_suffix=rate["table_suffix"], sample_rate=rate["percent"]))
             # Print the timestamps for sanity-checking
             print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_activity_data")
             print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_activity_data")
             # Drop the temporary table
             db.run(Q_DROP_CSV_TABLE)
         for rate in SAMPLE_RATES:
-            db.run(Q_DELETE_EVENTS.format(table_suffix=rate.table_suffix, date=days_to_load[0], months=rate.months))
+            db.run(Q_DELETE_EVENTS.format(table_suffix=rate["table_suffix"], date=days_to_load[0], months=rate["months"]))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise
@@ -196,7 +196,7 @@ def import_events(force_reload=False):
         db.run("COMMIT TRANSACTION")
 
     for rate in SAMPLE_RATES:
-        db.run(Q_VACUUM_TABLES.format(table_suffix=rate.table_suffix))
+        db.run(Q_VACUUM_TABLES.format(table_suffix=rate["table_suffix"]))
 
 if __name__ == "__main__":
     import_events()

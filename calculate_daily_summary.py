@@ -61,6 +61,11 @@ Q_DAILY_DEVICES_SUMMARIZE = """
     ORDER BY 1;
 """
 
+Q_DAILY_DEVICES_EXPIRE = """
+    DELETE FROM daily_activity_per_device{suffix}
+    WHERE day > '{day_until}'::DATE;
+"""
+
 # For the daily multi-device-users summary, we maintain
 # a table of (day, uid, device_now, device_prev) tuples
 # based on whether that user had multiple devices
@@ -96,6 +101,11 @@ Q_MD_USERS_SUMMARIZE = """
     ORDER BY 1;
 """
 
+Q_MD_USERS_EXPIRE = """
+    DELETE FROM daily_multi_device_users{suffix}
+    WHERE day > '{day_until}'::DATE;
+"""
+
 Q_GET_FIRST_UNPROCESSED_DAY = """
     SELECT (MAX(day) + '1 day'::INTERVAL) AS timestamp
     FROM daily_multi_device_users{suffix};
@@ -117,7 +127,7 @@ Q_VACUUM_TABLES = """
     VACUUM FULL daily_multi_device_users{suffix};
 """
 
-def summarize_events(day_from=None, day_until=None):
+def summarize_events():
     db = postgres.Postgres(DB)
     db.run("BEGIN TRANSACTION")
     try:
@@ -125,14 +135,12 @@ def summarize_events(day_from=None, day_until=None):
             db.run(Q_DAILY_DEVICES_CREATE_TABLE.format(suffix=suffix))
             db.run(Q_MD_USERS_CREATE_TABLE.format(suffix=suffix))
             # By default, summarize the latest days that are not yet summarized.
+            day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(suffix=suffix))
             if day_from is None:
-                day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(suffix=suffix))
+                day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
                 if day_from is None:
-                    day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
-                    if day_from is None:
-                        raise RuntimeError('no events in db')
-            if day_until is None:
-                day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(suffix=suffix))
+                    raise RuntimeError('no events in db')
+            day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(suffix=suffix))
             days = {
                 "day_from": day_from,
                 "day_until": day_until,
@@ -147,6 +155,9 @@ def summarize_events(day_from=None, day_until=None):
             print "UPDATING MULTI-DEVICE USERS SUMMARY"
             db.run(Q_MD_USERS_CLEAR.format(**days))
             db.run(Q_MD_USERS_SUMMARIZE.format(**days))
+            # Expire old data
+            db.run(Q_DAILY_DEVICES_EXPIRE.format(suffix=suffix, day_until=day_until))
+            db.run(Q_MD_USERS_EXPIRE.format(suffix=suffix, day_until=day_until))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise

@@ -31,7 +31,7 @@ TABLE_SUFFIXES = (
 # we maintain a table giving (day, uid, device_id).
 
 Q_DAILY_DEVICES_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS daily_activity_per_device{table_suffix} (
+    CREATE TABLE IF NOT EXISTS daily_activity_per_device{suffix} (
       day DATE NOT NULL SORTKEY ENCODE lzo,
       uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       device_id VARCHAR(32) NOT NULL ENCODE lzo,
@@ -43,18 +43,18 @@ Q_DAILY_DEVICES_CREATE_TABLE = """
 """
 
 Q_DAILY_DEVICES_CLEAR = """
-    DELETE FROM daily_activity_per_device{table_suffix}
+    DELETE FROM daily_activity_per_device{suffix}
     WHERE day >= '{day_from}'::DATE
     AND day <= '{day_until}'::DATE;
 """
 
 Q_DAILY_DEVICES_SUMMARIZE = """
-    INSERT INTO daily_activity_per_device{table_suffix}
+    INSERT INTO daily_activity_per_device{suffix}
       (day, uid, device_id, service, ua_browser, ua_version, ua_os)
     SELECT DISTINCT
       timestamp::DATE as day,
       uid, device_id, service, ua_browser, ua_version, ua_os
-    FROM activity_events{table_suffix}
+    FROM activity_events{suffix}
     WHERE device_id != ''
     AND timestamp::DATE >= '{day_from}'::DATE
     AND timestamp::DATE <= '{day_until}'::DATE
@@ -67,7 +67,7 @@ Q_DAILY_DEVICES_SUMMARIZE = """
 # active in the last seven days.
 
 Q_MD_USERS_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS daily_multi_device_users{table_suffix} (
+    CREATE TABLE IF NOT EXISTS daily_multi_device_users{suffix} (
       day DATE NOT NULL SORTKEY ENCODE lzo,
       uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       device_now VARCHAR(32) NOT NULL ENCODE lzo,
@@ -76,16 +76,16 @@ Q_MD_USERS_CREATE_TABLE = """
 """
 
 Q_MD_USERS_CLEAR = """
-    DELETE FROM daily_multi_device_users{table_suffix}
+    DELETE FROM daily_multi_device_users{suffix}
     WHERE day >= '{day_from}'::DATE
     AND day <= '{day_until}'::DATE;
 """
 
 Q_MD_USERS_SUMMARIZE = """
-    INSERT INTO daily_multi_device_users{table_suffix} (day, uid, device_now, device_prev)
+    INSERT INTO daily_multi_device_users{suffix} (day, uid, device_now, device_prev)
     SELECT DISTINCT present.day, present.uid, present.device_id, past.device_id
-    FROM daily_activity_per_device{table_suffix} as present
-    INNER JOIN daily_activity_per_device{table_suffix} as past
+    FROM daily_activity_per_device{suffix} as present
+    INNER JOIN daily_activity_per_device{suffix} as past
     ON
       present.uid = past.uid
       AND present.device_id != past.device_id
@@ -98,45 +98,45 @@ Q_MD_USERS_SUMMARIZE = """
 
 Q_GET_FIRST_UNPROCESSED_DAY = """
     SELECT (MAX(day) + '1 day'::INTERVAL) AS timestamp
-    FROM daily_multi_device_users{table_suffix};
+    FROM daily_multi_device_users{suffix};
 """
 
 Q_GET_FIRST_AVAILABLE_DAY = """
     SELECT MIN(timestamp)::DATE
-    FROM activity_events{table_suffix};
+    FROM activity_events{suffix};
 """
 
 Q_GET_LAST_AVAILABLE_DAY = """
     SELECT MAX(timestamp)::DATE
-    FROM activity_events{table_suffix};
+    FROM activity_events{suffix};
 """
 
 Q_VACUUM_TABLES = """
     END;
-    VACUUM FULL daily_activity_per_device{table_suffix};
-    VACUUM FULL daily_multi_device_users{table_suffix};
+    VACUUM FULL daily_activity_per_device{suffix};
+    VACUUM FULL daily_multi_device_users{suffix};
 """
 
 def summarize_events(day_from=None, day_until=None):
     db = postgres.Postgres(DB)
     db.run("BEGIN TRANSACTION")
     try:
-        for table_suffix in TABLE_SUFFIXES:
-            db.run(Q_DAILY_DEVICES_CREATE_TABLE.format(table_suffix=table_suffix))
-            db.run(Q_MD_USERS_CREATE_TABLE.format(table_suffix=table_suffix))
+        for suffix in TABLE_SUFFIXES:
+            db.run(Q_DAILY_DEVICES_CREATE_TABLE.format(suffix=suffix))
+            db.run(Q_MD_USERS_CREATE_TABLE.format(suffix=suffix))
             # By default, summarize the latest days that are not yet summarized.
             if day_from is None:
-                day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(table_suffix=table_suffix))
+                day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(suffix=suffix))
                 if day_from is None:
-                    day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(table_suffix=table_suffix))
+                    day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
                     if day_from is None:
                         raise RuntimeError('no events in db')
             if day_until is None:
-                day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(table_suffix=table_suffix))
+                day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(suffix=suffix))
             days = {
                 "day_from": day_from,
                 "day_until": day_until,
-                "table_suffix": table_suffix
+                "suffix": suffix
             }
             print "SUMMARIZING FROM", day_from, "UNTIL", day_until
             # Update daily device activity.

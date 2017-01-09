@@ -119,6 +119,11 @@ Q_INSERT_EVENTS = """
       AND ts::DATE <= '{day}'::DATE + '{months} months'::INTERVAL;
 """
 
+Q_VACUUM_TABLES = """
+    END;
+    VACUUM FULL activity_events{suffix};
+"""
+
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
@@ -173,6 +178,9 @@ def import_events(force_reload=False):
         raise
     else:
         db.run("COMMIT TRANSACTION")
+
+    for rate in SAMPLE_RATES:
+        db.run(Q_VACUUM_TABLES.format(suffix=rate["suffix"]))
 
 if __name__ == "__main__":
     import_events(True)

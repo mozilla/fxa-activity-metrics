@@ -164,7 +164,6 @@ def import_events(force_reload=False):
             if force_reload:
                 days_to_load.append(day)
             else:
-                # It's faster to check the 10% sampled table...
                 if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
                     days_to_load.append(day)
     days_to_load.sort(reverse=True)

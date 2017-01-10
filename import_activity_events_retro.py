@@ -116,7 +116,12 @@ Q_INSERT_EVENTS = """
       FROM temporary_raw_activity_data
     )
     WHERE cohort <= {percent}
-      AND ts::DATE <= '{day}'::DATE + '{months} months'::INTERVAL;
+      AND ts::DATE >= '{day}'::DATE - '{months} months'::INTERVAL;
+"""
+
+Q_DELETE_EVENTS = """
+    DELETE FROM activity_events{suffix}
+    WHERE timestamp::DATE < '{day}'::DATE - '{months} months'::INTERVAL;
 """
 
 Q_VACUUM_TABLES = """
@@ -172,6 +177,7 @@ def import_events(force_reload=False):
             db.run(Q_DROP_CSV_TABLE)
         for rate in SAMPLE_RATES:
             # Expire old data
+            print "EXPIRING", days_to_load[0], "+", rate["months"], "MONTHS"
             db.run(Q_DELETE_EVENTS.format(suffix=rate["suffix"], day=days_to_load[0], months=rate["months"]))
     except:
         db.run("ROLLBACK TRANSACTION")

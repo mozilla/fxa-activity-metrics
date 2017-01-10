@@ -63,7 +63,7 @@ Q_DAILY_DEVICES_SUMMARIZE = """
 
 Q_DAILY_DEVICES_EXPIRE = """
     DELETE FROM daily_activity_per_device{suffix}
-    WHERE day > '{day_until}'::DATE;
+    WHERE day < '{day_expiry}'::DATE;
 """
 
 # For the daily multi-device-users summary, we maintain
@@ -103,7 +103,7 @@ Q_MD_USERS_SUMMARIZE = """
 
 Q_MD_USERS_EXPIRE = """
     DELETE FROM daily_multi_device_users{suffix}
-    WHERE day > '{day_until}'::DATE;
+    WHERE day < '{day_expiry}'::DATE;
 """
 
 Q_GET_FIRST_UNPROCESSED_DAY = """
@@ -134,10 +134,11 @@ def summarize_events():
         for suffix in TABLE_SUFFIXES:
             db.run(Q_DAILY_DEVICES_CREATE_TABLE.format(suffix=suffix))
             db.run(Q_MD_USERS_CREATE_TABLE.format(suffix=suffix))
+            day_expiry = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
             # By default, summarize the latest days that are not yet summarized.
             day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(suffix=suffix))
             if day_from is None:
-                day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
+                day_from = day_expiry
                 if day_from is None:
                     raise RuntimeError('no events in db')
             day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(suffix=suffix))
@@ -156,8 +157,9 @@ def summarize_events():
             db.run(Q_MD_USERS_CLEAR.format(**days))
             db.run(Q_MD_USERS_SUMMARIZE.format(**days))
             # Expire old data
-            db.run(Q_DAILY_DEVICES_EXPIRE.format(suffix=suffix, day_until=day_until))
-            db.run(Q_MD_USERS_EXPIRE.format(suffix=suffix, day_until=day_until))
+            print "EXPIRING", day_expiry, "FOR SUFFIX", suffix
+            db.run(Q_DAILY_DEVICES_EXPIRE.format(suffix=suffix, day_expiry=day_expiry))
+            db.run(Q_MD_USERS_EXPIRE.format(suffix=suffix, day_expiry=day_expiry))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise

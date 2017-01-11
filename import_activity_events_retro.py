@@ -61,6 +61,19 @@ Q_CREATE_CSV_TABLE = """
     );
 """
 
+Q_CREATE_EVENTS_TABLE = """
+    CREATE TABLE IF NOT EXISTS activity_events{suffix} (
+      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+      type VARCHAR(30) NOT NULL ENCODE lzo,
+      device_id VARCHAR(32) ENCODE lzo,
+      service VARCHAR(40) ENCODE lzo,
+      ua_browser VARCHAR(40) ENCODE lzo,
+      ua_version VARCHAR(40) ENCODE lzo,
+      ua_os VARCHAR(40) ENCODE lzo
+    );
+"""
+
 Q_CHECK_FOR_DAY = """
     SELECT timestamp FROM activity_events_sampled_10
     WHERE timestamp::DATE = '{day}'::DATE
@@ -134,9 +147,8 @@ def import_events(force_reload=False):
     b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
-    # Deliberately don't create the activity_events table here,
-    # to avoid duplicating the schema in 2 places. This script
-    # will only run against a pre-created activity_events table.
+    for rate in SAMPLE_RATES:
+        db.run(Q_CREATE_EVENTS_TABLE.format(suffix=rate["suffix"]))
     days = []
     days_to_load = []
     # Find all the days available for loading.

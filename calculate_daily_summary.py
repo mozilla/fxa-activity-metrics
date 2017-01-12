@@ -166,7 +166,8 @@ def summarize_events():
     else:
         db.run("COMMIT TRANSACTION")
 
-    db.run(Q_VACUUM_TABLES)
+    for suffix in TABLE_SUFFIXES:
+        db.run(Q_VACUUM_TABLES.format(suffix=suffix))
 
 if __name__ == "__main__":
     summarize_events()

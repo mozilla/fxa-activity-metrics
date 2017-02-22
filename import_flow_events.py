@@ -32,6 +32,13 @@ EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 EVENTS_PREFIX = "fxa-flow/data/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "flow-{day}.csv"
 
+# The CSV format has changed over time. This config controls the
+# column names, definitions and deploy dates for those changes.
+ADDITIONAL_COLUMNS = (
+    {"name":"locale", "definition":"VARCHAR(40)", "deploy_date":"2017-02-22"},
+    {"name":"uid", "definition":"VARCHAR(64)", "deploy_date":"2017-02-22"},
+)
+
 # There are three tables:
 #   * temporary_raw_flow_data - raw data from the CSV file
 #   * flow_metadata           - metadata for each flow
@@ -57,6 +64,7 @@ Q_CREATE_CSV_TABLE = """
       utm_medium VARCHAR(40),
       utm_source VARCHAR(40),
       utm_term VARCHAR(40)
+      {additional_columns}
     );
 """
 Q_CREATE_METADATA_TABLE = """
@@ -80,7 +88,9 @@ Q_CREATE_METADATA_TABLE = """
       utm_medium VARCHAR(40) ENCODE lzo,
       utm_source VARCHAR(40) ENCODE lzo,
       utm_term VARCHAR(40) ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo
+      export_date DATE NOT NULL ENCODE lzo,
+      locale VARCHAR(40) ENCODE lzo,
+      uid VARCHAR(64) ENCODE lzo
     );
 """
 Q_CREATE_EVENTS_TABLE = """
@@ -91,7 +101,9 @@ Q_CREATE_EVENTS_TABLE = """
       flow_time BIGINT NOT NULL ENCODE lzo,
       flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
       type VARCHAR(64) NOT NULL ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo
+      export_date DATE NOT NULL ENCODE lzo,
+      locale VARCHAR(40) ENCODE lzo,
+      uid VARCHAR(64) ENCODE lzo
     );
 """
 
@@ -134,6 +146,7 @@ Q_COPY_CSV = """
       utm_medium,
       utm_source,
       utm_term
+      {additional_columns}
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
@@ -186,6 +199,7 @@ Q_INSERT_EVENTS = """
       flow_id,
       type,
       export_date
+      {additional_columns}
     )
     SELECT
       'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
@@ -193,20 +207,21 @@ Q_INSERT_EVENTS = """
       flow_id,
       (CASE WHEN type LIKE 'flow.%.begin' THEN 'flow.begin' ELSE type END),
       '{day}'::DATE
+	  {additional_columns}
     FROM temporary_raw_flow_data;
 """
 
-Q_UPDATE_DURATION = """
+Q_UPDATE_METADATA = """
     UPDATE flow_metadata
-    SET duration = durations.flow_time
+    SET {target_name} = events.{source_name}
     FROM (
-      SELECT flow_id, MAX(flow_time) AS flow_time
+      SELECT flow_id, MAX({source_name}) AS {source_name}
       FROM flow_events
       WHERE "timestamp" >= '{day}'::DATE
         AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
       GROUP BY flow_id
-    ) AS durations
-    WHERE flow_metadata.flow_id = durations.flow_id
+    ) AS events
+    WHERE flow_metadata.flow_id = events.flow_id
       AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
       AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
@@ -290,7 +305,6 @@ def import_events(force_reload=False):
     for key in b.list(prefix=EVENTS_PREFIX):
         filename = os.path.basename(key.name)
         day = "-".join(filename[:-4].split("-")[1:])
-        print day
         days.append(day)
         if force_reload:
             days_to_load.append(day)
@@ -303,8 +317,15 @@ def import_events(force_reload=False):
     try:
         for day in days_to_load:
             print "LOADING", day
+            # Collate the additional CSV columns for this day
+            additional_column_definitions = ""
+            additional_column_names = ""
+            for column in ADDITIONAL_COLUMNS:
+                if day > column["deploy_date"]:
+                    additional_column_definitions += "," + column["name"] + " " + column["definition"]
+                    additional_column_names += "," + column["name"]
             # Create the temporary table
-            db.run(Q_CREATE_CSV_TABLE)
+            db.run(Q_CREATE_CSV_TABLE.format(additional_columns=additional_column_definitions))
             # Clear any existing data for the day, to avoid duplicates.
             db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
             db.run(Q_CLEAR_DAY_METADATA.format(day=day))
@@ -312,14 +333,18 @@ def import_events(force_reload=False):
             # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(
                 s3path=s3path,
+                additional_columns=additional_column_names,
                 **CONFIG
             ))
             # Populate the flow_metadata table
             db.run(Q_INSERT_METADATA.format(day=day))
             # Populate the flow_events table
-            db.run(Q_INSERT_EVENTS.format(day=day))
+            db.run(Q_INSERT_EVENTS.format(day=day,additional_columns=additional_column_names))
             # Update dependent fields in the flow_metadata table
-            db.run(Q_UPDATE_DURATION.format(day=day))
+            db.run(Q_UPDATE_METADATA.format(target_name="duration",source_name="flow_time",day=day))
+            for column in ADDITIONAL_COLUMNS:
+                if day > column["deploy_date"]:
+                    db.run(Q_UPDATE_METADATA.format(target_name=column["name"],source_name=column["name"],day=day))
             db.run(Q_UPDATE_COMPLETED.format(day=day))
             db.run(Q_UPDATE_NEW_ACCOUNT.format(day=day))
             db.run(Q_UPDATE_METRICS_CONTEXT.format(day=day))

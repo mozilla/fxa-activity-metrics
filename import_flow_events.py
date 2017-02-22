@@ -56,7 +56,9 @@ Q_CREATE_CSV_TABLE = """
       utm_content VARCHAR(40),
       utm_medium VARCHAR(40),
       utm_source VARCHAR(40),
-      utm_term VARCHAR(40)
+      utm_term VARCHAR(40),
+      locale VARCHAR(40),
+      uid VARCHAR(64)
     );
 """
 Q_CREATE_METADATA_TABLE = """
@@ -80,7 +82,9 @@ Q_CREATE_METADATA_TABLE = """
       utm_medium VARCHAR(40) ENCODE lzo,
       utm_source VARCHAR(40) ENCODE lzo,
       utm_term VARCHAR(40) ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo
+      export_date DATE NOT NULL ENCODE lzo,
+      locale VARCHAR(40) ENCODE lzo,
+      uid VARCHAR(64) ENCODE lzo
     );
 """
 Q_CREATE_EVENTS_TABLE = """
@@ -133,7 +137,9 @@ Q_COPY_CSV = """
       utm_content,
       utm_medium,
       utm_source,
-      utm_term
+      utm_term,
+      locale,
+      uid
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
@@ -196,16 +202,16 @@ Q_INSERT_EVENTS = """
     FROM temporary_raw_flow_data;
 """
 
-Q_UPDATE_DURATION = """
+Q_UPDATE_METADATA = """
     UPDATE flow_metadata
-    SET duration = durations.flow_time
+    SET {target_name} = events.{source_name}
     FROM (
-      SELECT flow_id, MAX(flow_time) AS flow_time
+      SELECT flow_id, MAX({source_name}) AS {source_name}
       FROM flow_events
       WHERE "timestamp" >= '{day}'::DATE
         AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
       GROUP BY flow_id
-    ) AS durations
+    ) AS events
     WHERE flow_metadata.flow_id = durations.flow_id
       AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
       AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
@@ -319,7 +325,9 @@ def import_events(force_reload=False):
             # Populate the flow_events table
             db.run(Q_INSERT_EVENTS.format(day=day))
             # Update dependent fields in the flow_metadata table
-            db.run(Q_UPDATE_DURATION.format(day=day))
+            db.run(Q_UPDATE_METADATA.format(target_name="duration",source_name="flow_time",day=day))
+            db.run(Q_UPDATE_METADATA.format(target_name="locale",source_name="locale",day=day))
+            db.run(Q_UPDATE_METADATA.format(target_name="uid",source_name="uid",day=day))
             db.run(Q_UPDATE_COMPLETED.format(day=day))
             db.run(Q_UPDATE_NEW_ACCOUNT.format(day=day))
             db.run(Q_UPDATE_METRICS_CONTEXT.format(day=day))

@@ -178,6 +178,24 @@ Q_INSERT_METADATA = """
     FROM temporary_raw_flow_data
     WHERE type LIKE 'flow%begin';
 """
+
+Q_INSERT_EVENTS = """
+    INSERT INTO flow_events (
+      timestamp,
+      flow_time,
+      flow_id,
+      type,
+      export_date
+    )
+    SELECT
+      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
+      flow_time,
+      flow_id,
+      (CASE WHEN type LIKE 'flow.%.begin' THEN 'flow.begin' ELSE type END),
+      '{day}'::DATE
+    FROM temporary_raw_flow_data;
+"""
+
 Q_UPDATE_DURATION = """
     UPDATE flow_metadata
     SET duration = durations.flow_time
@@ -253,23 +271,6 @@ Q_UPDATE_METRICS_CONTEXT = """
       AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
 """
 
-Q_INSERT_EVENTS = """
-    INSERT INTO flow_events (
-      timestamp,
-      flow_time,
-      flow_id,
-      type,
-      export_date
-    )
-    SELECT
-      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
-      flow_time,
-      flow_id,
-      (CASE WHEN type LIKE 'flow.%.begin' THEN 'flow.begin' ELSE type END),
-      '{day}'::DATE
-    FROM temporary_raw_flow_data;
-"""
-
 Q_VACUUM_TABLES = """
     END;
     VACUUM FULL flow_events;
@@ -315,12 +316,13 @@ def import_events(force_reload=False):
             ))
             # Populate the flow_metadata table
             db.run(Q_INSERT_METADATA.format(day=day))
+            # Populate the flow_events table
+            db.run(Q_INSERT_EVENTS.format(day=day))
+            # Update dependent fields in the flow_metadata table
             db.run(Q_UPDATE_DURATION.format(day=day))
             db.run(Q_UPDATE_COMPLETED.format(day=day))
             db.run(Q_UPDATE_NEW_ACCOUNT.format(day=day))
             db.run(Q_UPDATE_METRICS_CONTEXT.format(day=day))
-            # Populate the flow_events table
-            db.run(Q_INSERT_EVENTS.format(day=day))
             # Print the timestamps for sanity-checking.
             print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
             print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")

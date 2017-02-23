@@ -27,21 +27,6 @@ TABLE_SUFFIXES = (
     ""
 )
 
-# For the daily device activity summary,
-# we maintain a table giving (day, uid, device_id).
-
-Q_DAILY_DEVICES_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS daily_activity_per_device{suffix} (
-      day DATE NOT NULL SORTKEY ENCODE lzo,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      device_id VARCHAR(32) NOT NULL ENCODE lzo,
-      service VARCHAR(40) ENCODE lzo,
-      ua_browser VARCHAR(40) ENCODE lzo,
-      ua_version VARCHAR(40) ENCODE lzo,
-      ua_os VARCHAR(40) ENCODE lzo
-    );
-"""
-
 Q_DAILY_DEVICES_CLEAR = """
     DELETE FROM daily_activity_per_device{suffix}
     WHERE day >= '{day_from}'::DATE
@@ -63,21 +48,7 @@ Q_DAILY_DEVICES_SUMMARIZE = """
 
 Q_DAILY_DEVICES_EXPIRE = """
     DELETE FROM daily_activity_per_device{suffix}
-    WHERE day < '{day_first}'::DATE;
-"""
-
-# For the daily multi-device-users summary, we maintain
-# a table of (day, uid, device_now, device_prev) tuples
-# based on whether that user had multiple devices
-# active in the last seven days.
-
-Q_MD_USERS_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS daily_multi_device_users{suffix} (
-      day DATE NOT NULL SORTKEY ENCODE lzo,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      device_now VARCHAR(32) NOT NULL ENCODE lzo,
-      device_prev VARCHAR(32) NOT NULL ENCODE lzo
-    );
+    WHERE day < '{day_from}'::DATE;
 """
 
 Q_MD_USERS_CLEAR = """
@@ -103,7 +74,7 @@ Q_MD_USERS_SUMMARIZE = """
 
 Q_MD_USERS_EXPIRE = """
     DELETE FROM daily_multi_device_users{suffix}
-    WHERE day < '{day_first}'::DATE;
+    WHERE day < '{day_from}'::DATE;
 """
 
 Q_GET_FIRST_AVAILABLE_DAY = """
@@ -111,14 +82,9 @@ Q_GET_FIRST_AVAILABLE_DAY = """
     FROM activity_events{suffix};
 """
 
-Q_GET_FIRST_UNPROCESSED_DAY = """
-    SELECT (MAX(day) + '1 day'::INTERVAL) AS timestamp
+Q_GET_LAST_UNPROCESSED_DAY = """
+    SELECT (MIN(day) - '1 day'::INTERVAL) AS timestamp
     FROM daily_multi_device_users{suffix};
-"""
-
-Q_GET_LAST_AVAILABLE_DAY = """
-    SELECT MAX(timestamp)::DATE
-    FROM activity_events{suffix};
 """
 
 Q_VACUUM_TABLES = """
@@ -132,16 +98,15 @@ def summarize_events():
     db.run("BEGIN TRANSACTION")
     try:
         for suffix in TABLE_SUFFIXES:
-            db.run(Q_DAILY_DEVICES_CREATE_TABLE.format(suffix=suffix))
-            db.run(Q_MD_USERS_CREATE_TABLE.format(suffix=suffix))
-            day_first = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
-            # Summarize the latest days that are not yet summarized.
-            day_from = db.one(Q_GET_FIRST_UNPROCESSED_DAY.format(suffix=suffix))
+            # Deliberately don't create the summary tables here, to avoid
+            # duplicating the schema in 2 places. This script will only run
+            # against pre-created summary tables.
+
+            # Summarize the earliest days that are not yet summarized.
+            day_from = db.one(Q_GET_FIRST_AVAILABLE_DAY.format(suffix=suffix))
             if day_from is None:
-                day_from = day_first
-                if day_from is None:
-                    raise RuntimeError('no events in db')
-            day_until = db.one(Q_GET_LAST_AVAILABLE_DAY.format(suffix=suffix))
+                raise RuntimeError('no events in db')
+            day_until = db.one(Q_GET_LAST_UNPROCESSED_DAY.format(suffix=suffix))
             days = {
                 "day_from": day_from,
                 "day_until": day_until,
@@ -157,9 +122,9 @@ def summarize_events():
             db.run(Q_MD_USERS_CLEAR.format(**days))
             db.run(Q_MD_USERS_SUMMARIZE.format(**days))
             # Expire old data
-            print "EXPIRING", day_first, "FOR SUFFIX", suffix
-            db.run(Q_DAILY_DEVICES_EXPIRE.format(suffix=suffix, day_first=day_first))
-            db.run(Q_MD_USERS_EXPIRE.format(suffix=suffix, day_first=day_first))
+            print "EXPIRING", day_from, "FOR SUFFIX", suffix
+            db.run(Q_DAILY_DEVICES_EXPIRE.format(suffix=suffix, day_from=day_from))
+            db.run(Q_MD_USERS_EXPIRE.format(suffix=suffix, day_from=day_from))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise

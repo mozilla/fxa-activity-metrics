@@ -37,13 +37,22 @@ EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 EVENTS_PREFIX = "whd/fxa-retention/"
 EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "events-{day}.csv"
 
+# We have sampled data sets that include a longer history.
+# This config controls the tables names, sample rates and
+# history length for each data set.
+SAMPLE_RATES = (
+    {"percent":10, "months":24, "suffix":"_sampled_10"},
+    {"percent":50, "months":6, "suffix":"_sampled_50"},
+    {"percent":100, "months":3, "suffix":""}
+)
+
 # We import each into a temporary table and then
 # INSERT them into the activity_events table
 
-Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_activity_data;"
+Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_activity_data_retro;"
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS temporary_raw_activity_data (
+    CREATE TABLE IF NOT EXISTS temporary_raw_activity_data_retro (
       timestamp BIGINT NOT NULL SORTKEY,
       ua_browser VARCHAR(40),
       ua_version VARCHAR(40),
@@ -55,19 +64,24 @@ Q_CREATE_CSV_TABLE = """
     );
 """
 
+Q_GET_LAST_DAY = """
+    SELECT MAX(timestamp)::DATE
+    FROM activity_events_sampled_10;
+"""
+
 Q_CHECK_FOR_DAY = """
-    SELECT timestamp FROM activity_events
+    SELECT timestamp FROM activity_events_sampled_10
     WHERE timestamp::DATE = '{day}'::DATE
     LIMIT 1;
 """
 
 Q_CLEAR_DAY = """
-    DELETE FROM activity_events
+    DELETE FROM activity_events{suffix}
     WHERE timestamp::DATE = '{day}'::DATE;
 """
 
 Q_COPY_CSV = """
-    COPY temporary_raw_activity_data (
+    COPY temporary_raw_activity_data_retro (
       timestamp,
       ua_browser,
       ua_version,
@@ -79,11 +93,12 @@ Q_COPY_CSV = """
     )
     FROM '{s3path}'
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
-    FORMAT AS CSV;
+    FORMAT AS CSV
+    TRUNCATECOLUMNS;
 """
 
 Q_INSERT_EVENTS = """
-    INSERT INTO activity_events (
+    INSERT INTO activity_events{suffix} (
       timestamp,
       uid,
       type,
@@ -94,7 +109,7 @@ Q_INSERT_EVENTS = """
       ua_os
     )
     SELECT
-      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
+      ts,
       uid,
       type,
       device_id,
@@ -102,17 +117,35 @@ Q_INSERT_EVENTS = """
       ua_browser,
       ua_version,
       ua_os
-    FROM temporary_raw_activity_data;
+    FROM (
+      SELECT
+        *,
+        'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL AS ts,
+        STRTOL(SUBSTRING(uid FROM 0 FOR 8), 16) % 100 AS cohort
+      FROM temporary_raw_activity_data_retro
+    )
+    WHERE cohort <= {percent}
+      AND ts::DATE >= '{last_day}'::DATE - '{months} months'::INTERVAL;
+"""
+
+Q_DELETE_EVENTS = """
+    DELETE FROM activity_events{suffix}
+    WHERE timestamp::DATE < '{last_day}'::DATE - '{months} months'::INTERVAL;
+"""
+
+Q_VACUUM_TABLES = """
+    END;
+    VACUUM FULL activity_events{suffix};
 """
 
 def import_events(force_reload=False):
     b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
-    # Deliberately don't create the activity_events table here,
+    # Deliberately don't create the activity_events tables here,
     # to avoid duplicating the schema in 2 places. This script
     # will only run against a pre-created activity_events table.
-    days = []
+    last_day = db.one(Q_GET_LAST_DAY)
     days_to_load = []
     # Find all the days available for loading.
     for key in b.list(prefix=EVENTS_PREFIX):
@@ -121,7 +154,6 @@ def import_events(force_reload=False):
         if not filename.endswith(".csv"):
             continue
         day = "-".join(filename[:-4].split("-")[1:])
-        days.append(day)
         if force_reload:
             days_to_load.append(day)
         else:
@@ -138,22 +170,32 @@ def import_events(force_reload=False):
             # Create the temporary table
             db.run(Q_CREATE_CSV_TABLE)
             # Clear any existing data for the day, to avoid duplicates
-            db.run(Q_CLEAR_DAY.format(day=day))
+            for rate in SAMPLE_RATES:
+                db.run(Q_CLEAR_DAY.format(suffix=rate["suffix"], day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
             db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
             # Populate the activity_events table
-            db.run(Q_INSERT_EVENTS)
+            for rate in SAMPLE_RATES:
+                db.run(Q_INSERT_EVENTS.format(suffix=rate["suffix"], percent=rate["percent"], last_day=last_day, months=rate["months"]))
             # Print the timestamps for sanity-checking
-            print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_activity_data")
-            print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_activity_data")
+            print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_activity_data_retro")
+            print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_activity_data_retro")
             # Drop the temporary table
             db.run(Q_DROP_CSV_TABLE)
+        for rate in SAMPLE_RATES:
+            # Expire old data
+            print "EXPIRING", last_day, "+", rate["months"], "MONTHS"
+            db.run(Q_DELETE_EVENTS.format(suffix=rate["suffix"], last_day=last_day, months=rate["months"]))
     except:
         db.run("ROLLBACK TRANSACTION")
         raise
     else:
         db.run("COMMIT TRANSACTION")
 
+    for rate in SAMPLE_RATES:
+        print "VACUUMING activity_events{suffix}".format(suffix=rate["suffix"])
+        db.run(Q_VACUUM_TABLES.format(suffix=rate["suffix"]))
+
 if __name__ == "__main__":
-    import_events(True)
+    import_events()

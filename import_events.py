@@ -25,40 +25,54 @@ SAMPLE_RATES = (
     {"percent":100, "months":3, "suffix":""}
 )
 
+# The temporary table receives raw data from S3.
+# The permenant table then receives data appropriately typed.
+TABLE_NAMES = {
+    "temp":"temporary_raw_{event_type}_data",
+    "perm":"{event_type}_events{suffix}"
+}
+
 Q_DROP_TEMPORARY_TABLE = """
-    DROP TABLE IF EXISTS temporary_raw_{event_type}_data;
-"""
+    DROP TABLE IF EXISTS {table};
+""".format(table=TABLE_NAMES["temp"])
 
 Q_CREATE_EVENTS_TABLE = """
-    CREATE TABLE IF NOT EXISTS {event_type}_events{suffix} (
+    CREATE TABLE IF NOT EXISTS {table} (
         timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
-        export_date DATE NOT NULL ENCODE lzo,
         {schema}
     );
-"""
+""".format(table=TABLE_NAMES["perm"],
+           schema="{schema}")
 
-# Tables are maintained in unison, so we only check
-# for days in the table with the longest history.
+Q_GET_MAX_DAY = """
+    SELECT MAX(timestamp)::DATE FROM {table};
+""".format(table=TABLE_NAMES["perm"].format(event_type="{event_type}",
+                                            suffix=""))
+
 Q_CHECK_FOR_DAY = """
-    SELECT timestamp FROM {event_type}_events_sampled_10
+    SELECT timestamp FROM {table}
     WHERE timestamp::DATE = '{day}'::DATE
     LIMIT 1;
-"""
+""".format(table=TABLE_NAMES["perm"].format(event_type="{event_type}",
+                                            suffix="_sampled_10"),
+           day="{day}")
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS temporary_raw_{event_type}_data (
+    CREATE TABLE IF NOT EXISTS {table} (
         timestamp BIGINT NOT NULL SORTKEY,
         {schema}
     );
-"""
+""".format(table=TABLE_NAMES["temp"],
+           schema="{schema}")
 
 Q_CLEAR_DAY = """
-    DELETE FROM {event_type}_events{suffix}
-    WHERE export_date::DATE = '{day}'::DATE;
-"""
+    DELETE FROM {table}
+    WHERE timestamp::DATE = '{day}'::DATE;
+""".format(table=TABLE_NAMES["perm"],
+           day="{day}")
 
 Q_COPY_CSV = """
-    COPY temporary_raw_{event_type}_data (
+    COPY {table} (
         timestamp,
         {columns}
     )
@@ -66,39 +80,47 @@ Q_COPY_CSV = """
     CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
-"""
+""".format(table=TABLE_NAMES["temp"],
+           columns="{columns}",
+           s3_path="{s3_path}",
+           aws_access_key_id="{aws_access_key_id}",
+           aws_secret_access_key="{aws_secret_access_key}")
 
 Q_INSERT_EVENTS = """
-    INSERT INTO {event_type}_events{suffix} (timestamp, {columns})
+    INSERT INTO {perm_table} (timestamp, {columns})
     SELECT ts, {columns}
     FROM (
         SELECT
             *,
             'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL AS ts,
             STRTOL(SUBSTRING(uid FROM 0 FOR 8), 16) % 100 AS cohort
-        FROM temporary_raw_{event_type}_data
+        FROM {temp_table}
     )
     WHERE cohort <= {percent}
     AND ts::DATE >= '{max_day}'::DATE - '{months} months'::INTERVAL;
-"""
+""".format(perm_table=TABLE_NAMES["perm"],
+           temp_table=TABLE_NAMES["temp"],
+           columns="{columns}",
+           percent="{percent}",
+           max_day="{max_day}",
+           months="{months}")
 
 Q_GET_TIMESTAMP = """
-    SELECT {which}(timestamp) FROM temporary_raw_{event_type}_data;
-"""
-
-Q_GET_MAX_DAY = """
-    SELECT MAX(timestamp)::DATE FROM {event_type}_events;
-"""
+    SELECT {which}(timestamp) FROM {table};
+""".format(which="{which}",
+           table=TABLE_NAMES["temp"])
 
 Q_DELETE_EVENTS = """
-    DELETE FROM {event_type}_events{suffix}
+    DELETE FROM {table}
     WHERE timestamp::DATE < '{day}'::DATE - '{months} months'::INTERVAL;
-"""
+""".format(table=TABLE_NAMES["perm"],
+           day="{day}",
+           months="{months}")
 
 Q_VACUUM_TABLES = """
     END;
-    VACUUM FULL {event_type}_events{suffix};
-"""
+    VACUUM FULL {table};
+""".format(table=TABLE_NAMES["perm"])
 
 def run(s3_prefix, event_type, schema, columns, day_from=None, day_until=None):
     def drop_temporary_table():

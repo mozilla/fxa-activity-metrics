@@ -16,5 +16,5 @@ SCHEMA = """
 
 COLUMNS = "ua_browser, ua_version, ua_os, uid, type, service, device_id"
 
-import_events.run("fxa-retention/data/events", "activity", SCHEMA, COLUMNS)
+import_events.run("fxa-retention/data/events", "activity", SCHEMA, COLUMNS, SCHEMA, COLUMNS)
 

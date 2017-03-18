@@ -41,8 +41,7 @@ Q_CREATE_EVENTS_TABLE = """
         timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
         {schema}
     );
-""".format(table=TABLE_NAMES["perm"],
-           schema="{schema}")
+""".format(table=TABLE_NAMES["perm"], schema="{schema}")
 
 Q_GET_MAX_DAY = """
     SELECT MAX(timestamp)::DATE FROM {table};
@@ -62,14 +61,7 @@ Q_CREATE_CSV_TABLE = """
         timestamp BIGINT NOT NULL SORTKEY,
         {schema}
     );
-""".format(table=TABLE_NAMES["temp"],
-           schema="{schema}")
-
-Q_CLEAR_DAY = """
-    DELETE FROM {table}
-    WHERE timestamp::DATE = '{day}'::DATE;
-""".format(table=TABLE_NAMES["perm"],
-           day="{day}")
+""".format(table=TABLE_NAMES["temp"], schema="{schema}")
 
 Q_COPY_CSV = """
     COPY {table} (
@@ -86,6 +78,11 @@ Q_COPY_CSV = """
            aws_access_key_id="{aws_access_key_id}",
            aws_secret_access_key="{aws_secret_access_key}")
 
+Q_CLEAR_DAY = """
+    DELETE FROM {table}
+    WHERE timestamp::DATE = '{day}'::DATE;
+""".format(table=TABLE_NAMES["perm"], day="{day}")
+
 Q_INSERT_EVENTS = """
     INSERT INTO {perm_table} (timestamp, {columns})
     SELECT ts, {columns}
@@ -93,36 +90,42 @@ Q_INSERT_EVENTS = """
         SELECT
             *,
             'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL AS ts,
-            STRTOL(SUBSTRING(uid FROM 0 FOR 8), 16) % 100 AS cohort
+            STRTOL(SUBSTRING({id_column} FROM 0 FOR 8), 16) % 100 AS cohort
         FROM {temp_table}
     )
     WHERE cohort <= {percent}
+    AND ts::DATE = '{day}'::DATE
     AND ts::DATE >= '{max_day}'::DATE - '{months} months'::INTERVAL;
 """.format(perm_table=TABLE_NAMES["perm"],
            temp_table=TABLE_NAMES["temp"],
            columns="{columns}",
+           id_column="{id_column}",
            percent="{percent}",
+           day="{day}",
            max_day="{max_day}",
            months="{months}")
 
 Q_GET_TIMESTAMP = """
     SELECT {which}(timestamp) FROM {table};
-""".format(which="{which}",
-           table=TABLE_NAMES["temp"])
+""".format(which="{which}", table=TABLE_NAMES["temp"])
 
 Q_DELETE_EVENTS = """
     DELETE FROM {table}
     WHERE timestamp::DATE < '{day}'::DATE - '{months} months'::INTERVAL;
-""".format(table=TABLE_NAMES["perm"],
-           day="{day}",
-           months="{months}")
+""".format(table=TABLE_NAMES["perm"], day="{day}", months="{months}")
 
 Q_VACUUM_TABLES = """
     END;
     VACUUM FULL {table};
+    ANALYZE {table};
 """.format(table=TABLE_NAMES["perm"])
 
-def run(s3_prefix, event_type, schema, columns, day_from=None, day_until=None):
+def nop(*args):
+    pass
+
+def run(s3_prefix, event_type, temp_schema, temp_columns, perm_schema, perm_columns, id_column="uid",
+        before_import=nop, after_day=nop, after_import=nop, day_from=None, day_until=None):
+
     def drop_temporary_table():
         db.run(Q_DROP_TEMPORARY_TABLE.format(event_type=event_type))
 
@@ -130,10 +133,13 @@ def run(s3_prefix, event_type, schema, columns, day_from=None, day_until=None):
         for rate in SAMPLE_RATES:
             db.run(Q_CREATE_EVENTS_TABLE.format(event_type=event_type,
                                                 suffix=rate["suffix"],
-                                                schema=schema))
+                                                schema=perm_schema))
 
     def get_max_day():
-        return db.one(Q_GET_MAX_DAY.format(event_type=event_type))
+        result = db.one(Q_GET_MAX_DAY.format(event_type=event_type))
+        if result:
+            return datetime.strftime(result, "%Y-%m-%d")
+        return result
 
     def is_candidate_day(day):
         return (not day_from or day_from <= day) and (not day_until or day_until >= day)
@@ -156,57 +162,53 @@ def run(s3_prefix, event_type, schema, columns, day_from=None, day_until=None):
                 days.append(day)
         return days
 
-    def begin_transaction():
-        db.run("BEGIN TRANSACTION")
-
     def get_timestamp(which):
         return db.one(Q_GET_TIMESTAMP.format(which=which, event_type=event_type))
 
     def print_timestamp(which):
-        print "  {which} TIMESTAMP".format(which=which), get_timestamp(which)
+        print "  {which} timestamp".format(which=which), get_timestamp(which)
 
     def import_day(day):
-        print "IMPORTING", day
-        db.run(Q_CREATE_CSV_TABLE.format(event_type=event_type, schema=schema))
+        print day
+        print "  COPYING CSV"
+        db.run(Q_CREATE_CSV_TABLE.format(event_type=event_type, schema=temp_schema))
+        s3_path = s3_uri.format(day=day)
+        db.run(Q_COPY_CSV.format(event_type=event_type,
+                                 columns=temp_columns,
+                                 s3_path=s3_path,
+                                 **CONFIG))
+        print_timestamp("MIN")
+        print_timestamp("MAX")
         for rate in SAMPLE_RATES:
+            print " ", TABLE_NAMES["perm"].format(event_type=event_type, suffix=rate["suffix"])
+            print "    CLEARING"
             db.run(Q_CLEAR_DAY.format(event_type=event_type,
                                       suffix=rate["suffix"],
                                       day=day))
-        s3_path = s3_uri.format(day=day)
-        db.run(Q_COPY_CSV.format(event_type=event_type,
-                                 columns=columns,
-                                 s3_path=s3_path,
-                                 **CONFIG))
-        for rate in SAMPLE_RATES:
+            print "    INSERTING"
             db.run(Q_INSERT_EVENTS.format(event_type=event_type,
-                                          columns=columns,
+                                          columns=perm_columns,
+                                          id_column=id_column,
                                           suffix=rate["suffix"],
                                           percent=rate["percent"],
+                                          day=day,
                                           max_day=max_day,
                                           months=rate["months"]))
-        print_timestamp("MIN")
-        print_timestamp("MAX")
+        after_day(db, day,
+                  TABLE_NAMES["temp"].format(event_type=event_type),
+                  TABLE_NAMES["perm"].format(event_type=event_type, suffix="{suffix}"),
+                  SAMPLE_RATES)
         drop_temporary_table()
 
     def expire_events():
-        max_day_after_import = get_max_day()
         for rate in SAMPLE_RATES:
-            print "EXPIRING", max_day_after_import, "+", rate["months"], "MONTHS"
+            table_name = TABLE_NAMES["perm"].format(event_type=event_type, suffix=rate["suffix"])
+            print "EXPIRING", table_name, "FOR", max_day, "+", rate["months"], "MONTHS"
             db.run(Q_DELETE_EVENTS.format(event_type=event_type,
                                           suffix=rate["suffix"],
-                                          day=max_day_after_import,
+                                          day=max_day,
                                           months=rate["months"]))
-
-    def rollback_transaction():
-        db.run("ROLLBACK TRANSACTION")
-
-    def commit_transaction():
-        db.run("COMMIT TRANSACTION")
-
-    def optimize_tables():
-        for rate in SAMPLE_RATES:
-            print "VACUUMING {event_type}_events{suffix}".format(event_type=event_type,
-                                                                 suffix=rate["suffix"])
+            print "VACUUMING AND ANALYZING", table_name
             db.run(Q_VACUUM_TABLES.format(event_type=event_type,
                                           suffix=rate["suffix"]))
 
@@ -214,25 +216,21 @@ def run(s3_prefix, event_type, schema, columns, day_from=None, day_until=None):
     db = postgres.Postgres(DB_URI)
     s3_uri = "s3://" + S3_BUCKET + "/" + s3_prefix + "-{day}.csv"
 
+    before_import(db, SAMPLE_RATES)
     drop_temporary_table()
     create_events_tables()
+    max_extant_day = get_max_day()
     if not day_from:
-        max_extant_day = get_max_day()
-        if max_extant_day:
-            day_from = datetime.strftime(max_extant_day, "%Y-%m-%d")
+        day_from = max_extant_day
     unpopulated_days = get_unpopulated_days()
-    unpopulated_days.sort()
-    max_day = unpopulated_days[-1]
-    print "IMPORTING {} DAYS OF DATA".format(len(unpopulated_days))
-    begin_transaction()
-    try:
-        for day in unpopulated_days:
-            import_day(day)
-        expire_events()
-    except:
-        rollback_transaction()
-        raise
+    unpopulated_days.sort(reverse=True)
+    if max_extant_day > unpopulated_days[0]:
+        max_day = max_extant_day
     else:
-        commit_transaction()
-    optimize_tables()
+        max_day = unpopulated_days[0]
+    print "FOUND", len(unpopulated_days), "DAYS"
+    for day in unpopulated_days:
+        import_day(day)
+    expire_events()
+    after_import(db, SAMPLE_RATES, max_day)
 

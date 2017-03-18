@@ -2,73 +2,66 @@
 # Script to import "flow event" metrics from S3 into redshift.
 #
 
-import os
-import json
-import time
-import datetime
+import import_events
 
-import postgres
-
-import boto.s3
-import boto.provider
-
-# Load config from disk,
-# and pull in credentials from the environment.
-
-with open("config.json") as f:
-    CONFIG = json.loads(f.read())
-
-if "aws_access_key_id" not in CONFIG:
-    p = boto.provider.Provider("aws")
-    CONFIG["aws_access_key_id"] = p.get_access_key()
-    CONFIG["aws_secret_access_key"] = p.get_secret_key()
-
-DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
-
-# Event data files are named like "flow-2016-02-15.csv"
-# and contain events for that day.
-
-EVENTS_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
-EVENTS_PREFIX = "fxa-flow/data/"
-EVENTS_FILE_URL = "s3://" + EVENTS_BUCKET + "/" + EVENTS_PREFIX + "flow-{day}.csv"
-
-# The CSV format has changed over time. This config controls the
-# column names, definitions and deploy dates for those changes.
-ADDITIONAL_COLUMNS = (
-    {"name":"locale", "definition":"VARCHAR(40)", "deploy_date":"2017-02-22"},
-    {"name":"uid", "definition":"VARCHAR(64)", "deploy_date":"2017-02-22"},
-)
-
-# There are three tables:
-#   * temporary_raw_flow_data - raw data from the CSV file
-#   * flow_metadata           - metadata for each flow
-#   * flow_events             - individual flow events
-
-Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_flow_data;"
-
-Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS temporary_raw_flow_data (
-      timestamp BIGINT NOT NULL SORTKEY,
-      type VARCHAR(64) NOT NULL,
-      flow_id VARCHAR(64) NOT NULL DISTKEY,
-      flow_time BIGINT NOT NULL,
-      ua_browser VARCHAR(40),
-      ua_version VARCHAR(40),
-      ua_os VARCHAR(40),
-      context VARCHAR(40),
-      entrypoint VARCHAR(40),
-      migration VARCHAR(40),
-      service VARCHAR(40),
-      utm_campaign VARCHAR(40),
-      utm_content VARCHAR(40),
-      utm_medium VARCHAR(40),
-      utm_source VARCHAR(40),
-      utm_term VARCHAR(40)
-      {additional_columns}
-    );
+TEMPORARY_SCHEMA = """
+    type VARCHAR(64) NOT NULL ENCODE lzo,
+    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+    flow_time BIGINT NOT NULL ENCODE lzo,
+    ua_browser VARCHAR(40) ENCODE lzo,
+    ua_version VARCHAR(40) ENCODE lzo,
+    ua_os VARCHAR(40) ENCODE lzo,
+    context VARCHAR(40) ENCODE lzo,
+    entrypoint VARCHAR(40) ENCODE lzo,
+    migration VARCHAR(40) ENCODE lzo,
+    service VARCHAR(40) ENCODE lzo,
+    utm_campaign VARCHAR(40) ENCODE lzo,
+    utm_content VARCHAR(40) ENCODE lzo,
+    utm_medium VARCHAR(40) ENCODE lzo,
+    utm_source VARCHAR(40) ENCODE lzo,
+    utm_term VARCHAR(40) ENCODE lzo,
+    locale VARCHAR(40) ENCODE lzo,
+    uid VARCHAR(64) ENCODE lzo
 """
+
+TEMPORARY_COLUMNS = """
+    type,
+    flow_id,
+    flow_time,
+    ua_browser,
+    ua_version,
+    ua_os,
+    context,
+    entrypoint,
+    migration,
+    service,
+    utm_campaign,
+    utm_content,
+    utm_medium,
+    utm_source,
+    utm_term,
+    locale,
+    uid
+"""
+
+EVENT_SCHEMA = """
+    type VARCHAR(64) NOT NULL ENCODE lzo,
+    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
+    flow_time BIGINT NOT NULL ENCODE lzo,
+    locale VARCHAR(40) ENCODE lzo,
+    uid VARCHAR(64) ENCODE lzo
+"""
+
+EVENT_COLUMNS = """
+    type,
+    flow_id,
+    flow_time,
+    locale,
+    uid
+"""
+
 Q_CREATE_METADATA_TABLE = """
-    CREATE TABLE IF NOT EXISTS flow_metadata (
+    CREATE TABLE IF NOT EXISTS flow_metadata{suffix} (
       flow_id VARCHAR(64) NOT NULL UNIQUE DISTKEY ENCODE lzo,
       begin_time TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
       -- Ideally duration would be type INTERVAL
@@ -93,69 +86,14 @@ Q_CREATE_METADATA_TABLE = """
       uid VARCHAR(64) ENCODE lzo
     );
 """
-Q_CREATE_EVENTS_TABLE = """
-    CREATE TABLE IF NOT EXISTS flow_events (
-      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
-      -- Ideally flow_time would be type INTERVAL
-      -- but redshift doesn't support that.
-      flow_time BIGINT NOT NULL ENCODE lzo,
-      flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      type VARCHAR(64) NOT NULL ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo,
-      locale VARCHAR(40) ENCODE lzo,
-      uid VARCHAR(64) ENCODE lzo
-    );
-"""
 
-Q_CHECK_FOR_DAY = """
-    SELECT timestamp FROM flow_events
-    WHERE timestamp::DATE >= '{day}'::DATE - '1 day'::INTERVAL
-      AND timestamp::DATE <= '{day}'::DATE + '1 day'::INTERVAL
-      AND export_date = '{day}'::DATE
-    LIMIT 1;
-"""
-
-Q_CLEAR_DAY_EVENTS = """
-    DELETE FROM flow_events
-    WHERE timestamp::DATE >= '{day}'::DATE - '1 day'::INTERVAL
-      AND timestamp::DATE <= '{day}'::DATE + '1 day'::INTERVAL
-      AND export_date = '{day}'::DATE;
-"""
 Q_CLEAR_DAY_METADATA = """
-    DELETE FROM flow_metadata
-    WHERE begin_time::DATE >= '{day}'::DATE - '1 day'::INTERVAL
-      AND begin_time::DATE <= '{day}'::DATE + '1 day'::INTERVAL
-      AND export_date = '{day}'::DATE;
-"""
-
-Q_COPY_CSV = """
-    COPY temporary_raw_flow_data (
-      timestamp,
-      type,
-      flow_id,
-      flow_time,
-      ua_browser,
-      ua_version,
-      ua_os,
-      context,
-      entrypoint,
-      migration,
-      service,
-      utm_campaign,
-      utm_content,
-      utm_medium,
-      utm_source,
-      utm_term
-      {additional_columns}
-    )
-    FROM '{s3path}'
-    CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
-    FORMAT AS CSV
-    TRUNCATECOLUMNS;
+    DELETE FROM flow_metadata{suffix}
+    WHERE export_date = '{day}';
 """
 
 Q_INSERT_METADATA = """
-    INSERT INTO flow_metadata (
+    INSERT INTO flow_metadata{suffix} (
       flow_id,
       begin_time,
       ua_browser,
@@ -188,84 +126,77 @@ Q_INSERT_METADATA = """
       utm_source,
       utm_term,
       '{day}'::DATE
-    FROM temporary_raw_flow_data
-    WHERE type LIKE 'flow%begin';
-"""
-
-Q_INSERT_EVENTS = """
-    INSERT INTO flow_events (
-      timestamp,
-      flow_time,
-      flow_id,
-      type,
-      export_date
-      {additional_columns}
+    FROM (
+      SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS cohort
+      FROM {table_name}
     )
-    SELECT
-      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
-      flow_time,
-      flow_id,
-      (CASE WHEN type LIKE 'flow.%.begin' THEN 'flow.begin' ELSE type END),
-      '{day}'::DATE
-	  {additional_columns}
-    FROM temporary_raw_flow_data;
+    WHERE cohort <= {percent}
+    AND type LIKE 'flow%begin';
 """
 
 Q_UPDATE_METADATA = """
-    UPDATE flow_metadata
-    SET {target_name} = events.{source_name}
+    UPDATE flow_metadata{suffix}
+    SET
+      duration = events.flow_time,
+      locale = events.locale,
+      uid = events.uid
     FROM (
-      SELECT flow_id, MAX({source_name}) AS {source_name}
-      FROM flow_events
-      WHERE "timestamp" >= '{day}'::DATE
-        AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
+      SELECT
+        flow_id,
+        MAX(flow_time) AS flow_time,
+        MAX(locale) AS locale,
+        MAX(uid) AS uid
+      FROM {table_name}
+      WHERE {table_name}.timestamp::DATE = '{day}'
+        OR {table_name}.timestamp::DATE = '{day}'::DATE + '1 day'::INTERVAL
       GROUP BY flow_id
     ) AS events
-    WHERE flow_metadata.flow_id = events.flow_id
-      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+    WHERE flow_metadata{suffix}.flow_id = events.flow_id;
 """
+
 Q_UPDATE_COMPLETED = """
-    UPDATE flow_metadata
+    UPDATE flow_metadata{suffix}
     SET completed = TRUE
     FROM (
       SELECT flow_id
-      FROM flow_events
+      FROM {table_name}
       WHERE type = 'flow.complete'
-        AND "timestamp" >= '{day}'::DATE
-        AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
+        AND (
+          {table_name}.timestamp::DATE = '{day}'
+          OR {table_name}.timestamp::DATE = '{day}'::DATE + '1 day'::INTERVAL
+        )
     ) AS complete
-    WHERE flow_metadata.flow_id = complete.flow_id
-      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+    WHERE flow_metadata{suffix}.flow_id = complete.flow_id;
 """
+
 Q_UPDATE_NEW_ACCOUNT = """
-    UPDATE flow_metadata
+    UPDATE flow_metadata{suffix}
     SET new_account = TRUE
     FROM (
       SELECT flow_id
-      FROM flow_events
+      FROM {table_name}
       WHERE type = 'account.created'
-        AND "timestamp" >= '{day}'::DATE
-        AND "timestamp" <= '{day}'::DATE + '1 day'::INTERVAL
+        AND (
+          {table_name}.timestamp::DATE = '{day}'
+          OR {table_name}.timestamp::DATE = '{day}'::DATE + '1 day'::INTERVAL
+        )
     ) AS created
-    WHERE flow_metadata.flow_id = created.flow_id
-      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+    WHERE flow_metadata{suffix}.flow_id = created.flow_id;
 """
+
 Q_UPDATE_METRICS_CONTEXT = """
-    UPDATE flow_metadata
+    UPDATE flow_metadata{suffix}
     SET
       -- See https://github.com/mozilla/fxa-content-server/issues/4135
-      context = (CASE WHEN flow_metadata.context = '' THEN metrics_context.context ELSE flow_metadata.context END),
-      entrypoint = (CASE WHEN flow_metadata.entrypoint = '' THEN metrics_context.entrypoint ELSE flow_metadata.entrypoint END),
-      migration = (CASE WHEN flow_metadata.migration = '' THEN metrics_context.migration ELSE flow_metadata.migration END),
-      service = (CASE WHEN flow_metadata.service = '' THEN metrics_context.service ELSE flow_metadata.service END),
-      utm_campaign = (CASE WHEN flow_metadata.utm_campaign = '' THEN metrics_context.utm_campaign ELSE flow_metadata.utm_campaign END),
-      utm_content = (CASE WHEN flow_metadata.utm_content = '' THEN metrics_context.utm_content ELSE flow_metadata.utm_content END),
-      utm_medium = (CASE WHEN flow_metadata.utm_medium = '' THEN metrics_context.utm_medium ELSE flow_metadata.utm_medium END),
-      utm_source = (CASE WHEN flow_metadata.utm_source = '' THEN metrics_context.utm_source ELSE flow_metadata.utm_source END),
-      utm_term = (CASE WHEN flow_metadata.utm_term = '' THEN metrics_context.utm_term ELSE flow_metadata.utm_term END)
+      context = (CASE WHEN flow_metadata{suffix}.context = '' THEN metrics_context.context ELSE flow_metadata{suffix}.context END),
+      entrypoint = (CASE WHEN flow_metadata{suffix}.entrypoint = '' THEN metrics_context.entrypoint ELSE flow_metadata{suffix}.entrypoint END),
+      migration = (CASE WHEN flow_metadata{suffix}.migration = '' THEN metrics_context.migration ELSE flow_metadata{suffix}.migration END),
+      service = (CASE WHEN flow_metadata{suffix}.service = '' THEN metrics_context.service ELSE flow_metadata{suffix}.service END),
+      utm_campaign = (CASE WHEN flow_metadata{suffix}.utm_campaign = '' THEN metrics_context.utm_campaign ELSE flow_metadata{suffix}.utm_campaign END),
+      utm_content = (CASE WHEN flow_metadata{suffix}.utm_content = '' THEN metrics_context.utm_content ELSE flow_metadata{suffix}.utm_content END),
+      utm_medium = (CASE WHEN flow_metadata{suffix}.utm_medium = '' THEN metrics_context.utm_medium ELSE flow_metadata{suffix}.utm_medium END),
+      utm_source = (CASE WHEN flow_metadata{suffix}.utm_source = '' THEN metrics_context.utm_source ELSE flow_metadata{suffix}.utm_source END),
+      utm_term = (CASE WHEN flow_metadata{suffix}.utm_term = '' THEN metrics_context.utm_term ELSE flow_metadata{suffix}.utm_term END)
     FROM (
       SELECT
         flow_id,
@@ -278,88 +209,81 @@ Q_UPDATE_METRICS_CONTEXT = """
         MAX(utm_medium) AS utm_medium,
         MAX(utm_source) AS utm_source,
         MAX(utm_term) AS utm_term
-      FROM temporary_raw_flow_data
+      FROM (
+        SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS cohort
+        FROM {table_name}
+      )
+      WHERE cohort <= {percent}
       GROUP BY flow_id
     ) AS metrics_context
-    WHERE flow_metadata.flow_id = metrics_context.flow_id
-      AND flow_metadata.begin_time >= '{day}'::DATE - '1 day'::INTERVAL
-      AND flow_metadata.begin_time <= '{day}'::DATE + '1 day'::INTERVAL;
+    WHERE flow_metadata{suffix}.flow_id = metrics_context.flow_id;
 """
 
-Q_VACUUM_TABLES = """
+Q_EXPIRE_METADATA = """
+    DELETE FROM flow_metadata{suffix}
+    WHERE begin_time::DATE < '{day}'::DATE - '{months} months'::INTERVAL;
+"""
+
+Q_VACUUM_METADATA = """
     END;
-    VACUUM FULL flow_events;
-    VACUUM FULL flow_metadata;
+    VACUUM FULL flow_metadata{suffix};
+    ANALYZE flow_metadata{suffix};
 """
 
-def import_events(force_reload=False):
-    b = boto.s3.connect_to_region('us-east-1').get_bucket(EVENTS_BUCKET)
-    db = postgres.Postgres(DB)
-    db.run(Q_DROP_CSV_TABLE)
-    db.run(Q_CREATE_METADATA_TABLE)
-    db.run(Q_CREATE_EVENTS_TABLE)
-    days = []
-    days_to_load = []
-    print EVENTS_BUCKET, EVENTS_PREFIX
-    # Find all the days available for loading.
-    for key in b.list(prefix=EVENTS_PREFIX):
-        filename = os.path.basename(key.name)
-        day = "-".join(filename[:-4].split("-")[1:])
-        days.append(day)
-        if force_reload:
-            days_to_load.append(day)
-        else:
-            if not db.one(Q_CHECK_FOR_DAY.format(day=day)):
-                days_to_load.append(day)
-    days_to_load.sort(reverse=True)
-    print "LOADING {} DAYS OF DATA".format(len(days_to_load))
-    db.run("BEGIN TRANSACTION")
-    try:
-        for day in days_to_load:
-            print "LOADING", day
-            # Collate the additional CSV columns for this day
-            additional_column_definitions = ""
-            additional_column_names = ""
-            for column in ADDITIONAL_COLUMNS:
-                if day > column["deploy_date"]:
-                    additional_column_definitions += "," + column["name"] + " " + column["definition"]
-                    additional_column_names += "," + column["name"]
-            # Create the temporary table
-            db.run(Q_CREATE_CSV_TABLE.format(additional_columns=additional_column_definitions))
-            # Clear any existing data for the day, to avoid duplicates.
-            db.run(Q_CLEAR_DAY_EVENTS.format(day=day))
-            db.run(Q_CLEAR_DAY_METADATA.format(day=day))
-            s3path = EVENTS_FILE_URL.format(day=day)
-            # Copy data from s3 into redshift
-            db.run(Q_COPY_CSV.format(
-                s3path=s3path,
-                additional_columns=additional_column_names,
-                **CONFIG
-            ))
-            # Populate the flow_metadata table
-            db.run(Q_INSERT_METADATA.format(day=day))
-            # Populate the flow_events table
-            db.run(Q_INSERT_EVENTS.format(day=day,additional_columns=additional_column_names))
-            # Update dependent fields in the flow_metadata table
-            db.run(Q_UPDATE_METADATA.format(target_name="duration",source_name="flow_time",day=day))
-            for column in ADDITIONAL_COLUMNS:
-                if day > column["deploy_date"]:
-                    db.run(Q_UPDATE_METADATA.format(target_name=column["name"],source_name=column["name"],day=day))
-            db.run(Q_UPDATE_COMPLETED.format(day=day))
-            db.run(Q_UPDATE_NEW_ACCOUNT.format(day=day))
-            db.run(Q_UPDATE_METRICS_CONTEXT.format(day=day))
-            # Print the timestamps for sanity-checking.
-            print "  MIN TIMESTAMP", db.one("SELECT MIN(timestamp) FROM temporary_raw_flow_data")
-            print "  MAX TIMESTAMP", db.one("SELECT MAX(timestamp) FROM temporary_raw_flow_data")
-            # Drop the temporary table
-            db.run(Q_DROP_CSV_TABLE)
-    except:
-        db.run("ROLLBACK TRANSACTION")
-        raise
-    else:
-        db.run("COMMIT TRANSACTION")
+def create_metadata_table(db, sample_rates):
+    for rate in sample_rates:
+        db.run(Q_CREATE_METADATA_TABLE.format(suffix=rate["suffix"]))
 
-    db.run(Q_VACUUM_TABLES)
+def set_day_metadata(db, day, temporary_table_name, permanent_table_name, sample_rates):
+    for rate in sample_rates:
+        print "  flow_metadata{suffix}".format(suffix=rate["suffix"])
+        print "    CLEARING"
+        db.run(Q_CLEAR_DAY_METADATA.format(suffix=rate["suffix"], day=day))
+        table_name = permanent_table_name.format(suffix=rate["suffix"])
+        print "    INSERTING"
+        db.run(Q_INSERT_METADATA.format(suffix=rate["suffix"],
+                                        day=day,
+                                        table_name=temporary_table_name,
+                                        percent=rate["percent"]))
+        print "    UPDATING"
+        db.run(Q_UPDATE_METADATA.format(suffix=rate["suffix"],
+                                        table_name=table_name,
+                                        day=day))
+        db.run(Q_UPDATE_COMPLETED.format(suffix=rate["suffix"],
+                                         table_name=table_name,
+                                         day=day))
+        db.run(Q_UPDATE_NEW_ACCOUNT.format(suffix=rate["suffix"],
+                                           table_name=table_name,
+                                           day=day))
+        if day < '2016-10-25':
+            # This query only exists because, once upon a time, metrics context
+            # data was not emitted reliably with the flow.begin event. There's no
+            # need to execute it on data emitted since train 71 shipped. I think
+            # that was around the 14th October 2016 but I'm not certain, hence
+            # the conservative estimate used here.
+            db.run(Q_UPDATE_METRICS_CONTEXT.format(suffix=rate["suffix"],
+                                                   table_name=temporary_table_name,
+                                                   percent=rate["percent"]))
 
-if __name__ == "__main__":
-    import_events(False)
+def expire_metadata(db, sample_rates, max_day):
+    for rate in sample_rates:
+        print "EXPIRING flow_metadata{suffix} FOR {max_day} + {months} MONTHS".format(suffix=rate["suffix"],
+                                                                                      max_day=max_day,
+                                                                                      months=rate["months"])
+        db.run(Q_EXPIRE_METADATA.format(suffix=rate["suffix"],
+                                        day=max_day,
+                                        months=rate["months"]))
+        print "VACUUMING AND ANALYZING flow_metadata{suffix}".format(suffix=rate["suffix"])
+        db.run(Q_VACUUM_METADATA.format(suffix=rate["suffix"]))
+
+import_events.run("fxa-flow/data/flow",
+                  "flow",
+                  TEMPORARY_SCHEMA,
+                  TEMPORARY_COLUMNS,
+                  EVENT_SCHEMA,
+                  EVENT_COLUMNS,
+                  "flow_id",
+                  create_metadata_table,
+                  set_day_metadata,
+                  expire_metadata)
+

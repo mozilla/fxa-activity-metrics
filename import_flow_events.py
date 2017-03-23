@@ -87,8 +87,19 @@ Q_CREATE_METADATA_TABLE = """
     );
 """
 
-Q_CLEAR_DAY_METADATA = """
-    DELETE FROM flow_metadata{suffix}
+Q_CREATE_EXPERIMENTS_TABLE = """
+    CREATE TABLE IF NOT EXISTS flow_experiments{suffix} (
+      experiment VARCHAR(40) NOT NULL DISTKEY ENCODE lzo,
+      cohort VARCHAR(40) NOT NULL ENCODE lzo,
+      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
+      flow_id VARCHAR(64) NOT NULL ENCODE lzo,
+      uid VARCHAR(64) ENCODE lzo,
+      export_date DATE NOT NULL ENCODE lzo
+    );
+"""
+
+Q_CLEAR_DAY = """
+    DELETE FROM flow_{table}{suffix}
     WHERE export_date = '{day}';
 """
 
@@ -127,10 +138,10 @@ Q_INSERT_METADATA = """
       utm_term,
       '{day}'::DATE
     FROM (
-      SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS cohort
+      SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
       FROM {table_name}
     )
-    WHERE cohort <= {percent}
+    WHERE sample <= {percent}
     AND type LIKE 'flow%begin';
 """
 
@@ -210,35 +221,73 @@ Q_UPDATE_METRICS_CONTEXT = """
         MAX(utm_source) AS utm_source,
         MAX(utm_term) AS utm_term
       FROM (
-        SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS cohort
+        SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
         FROM {table_name}
       )
-      WHERE cohort <= {percent}
+      WHERE sample <= {percent}
       GROUP BY flow_id
     ) AS metrics_context
     WHERE flow_metadata{suffix}.flow_id = metrics_context.flow_id;
 """
 
-Q_EXPIRE_METADATA = """
-    DELETE FROM flow_metadata{suffix}
-    WHERE begin_time::DATE < '{day}'::DATE - '{months} months'::INTERVAL;
+Q_INSERT_EXPERIMENTS = """
+    INSERT INTO flow_experiments{suffix} (
+      experiment,
+      cohort,
+      timestamp,
+      flow_id,
+      uid,
+      export_date
+    )
+    SELECT
+      SPLIT_PART(type, '.', 3) AS experiment,
+      SPLIT_PART(type, '.', 4) AS cohort,
+      'epoch'::TIMESTAMP + timestamp * '1 second'::INTERVAL,
+      flow_id,
+      uid,
+      '{day}'::DATE
+    FROM (
+      SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
+      FROM {table_name}
+    )
+    WHERE sample <= {percent}
+    AND type LIKE 'flow.experiment%';
 """
 
-Q_VACUUM_METADATA = """
+Q_UPDATE_EXPERIMENTS = """
+    UPDATE flow_experiments{suffix}
+    SET uid = events.uid
+    FROM (
+      SELECT flow_id, MAX(uid) AS uid
+      FROM {table_name}
+      WHERE {table_name}.timestamp::DATE = '{day}'
+        OR {table_name}.timestamp::DATE = '{day}'::DATE + '1 day'::INTERVAL
+      GROUP BY flow_id
+    ) AS events
+    WHERE flow_experiments{suffix}.flow_id = events.flow_id;
+"""
+
+Q_EXPIRE = """
+    DELETE FROM {table_name}
+    WHERE export_date < '{max_day}'::DATE - '{months} months'::INTERVAL;
+"""
+
+Q_VACUUM = """
     END;
-    VACUUM FULL flow_metadata{suffix};
-    ANALYZE flow_metadata{suffix};
+    VACUUM FULL {table_name};
+    ANALYZE {table_name};
 """
 
-def create_metadata_table(db, sample_rates):
+def before_import(db, sample_rates):
     for rate in sample_rates:
         db.run(Q_CREATE_METADATA_TABLE.format(suffix=rate["suffix"]))
+        db.run(Q_CREATE_EXPERIMENTS_TABLE.format(suffix=rate["suffix"]))
 
-def set_day_metadata(db, day, temporary_table_name, permanent_table_name, sample_rates):
+def after_day(db, day, temporary_table_name, permanent_table_name, sample_rates):
     for rate in sample_rates:
         print "  flow_metadata{suffix}".format(suffix=rate["suffix"])
         print "    CLEARING"
-        db.run(Q_CLEAR_DAY_METADATA.format(suffix=rate["suffix"], day=day))
+        db.run(Q_CLEAR_DAY.format(table="metadata", suffix=rate["suffix"], day=day))
         table_name = permanent_table_name.format(suffix=rate["suffix"])
         print "    INSERTING"
         db.run(Q_INSERT_METADATA.format(suffix=rate["suffix"],
@@ -264,17 +313,35 @@ def set_day_metadata(db, day, temporary_table_name, permanent_table_name, sample
             db.run(Q_UPDATE_METRICS_CONTEXT.format(suffix=rate["suffix"],
                                                    table_name=temporary_table_name,
                                                    percent=rate["percent"]))
+        print "  flow_experiments{suffix}".format(suffix=rate["suffix"])
+        print "    CLEARING"
+        db.run(Q_CLEAR_DAY.format(table="experiments", suffix=rate["suffix"], day=day))
+        print "    INSERTING"
+        db.run(Q_INSERT_EXPERIMENTS.format(suffix=rate["suffix"],
+                                           day=day,
+                                           table_name=temporary_table_name,
+                                           percent=rate["percent"]))
+        print "    UPDATING"
+        db.run(Q_UPDATE_EXPERIMENTS.format(suffix=rate["suffix"],
+                                           table_name=table_name,
+                                           day=day))
 
-def expire_metadata(db, sample_rates, max_day):
+def expire(db, table_name, max_day, months):
+    print "EXPIRING", table_name, "FOR", max_day, "+", months, "MONTHS"
+    db.run(Q_EXPIRE.format(table_name=table_name, max_day=max_day, months=months))
+
+def vacuum(db, table_name):
+    print "VACUUMING AND ANALYZING", table_name
+    db.run(Q_VACUUM.format(table_name=table_name))
+
+def after_import(db, sample_rates, max_day):
     for rate in sample_rates:
-        print "EXPIRING flow_metadata{suffix} FOR {max_day} + {months} MONTHS".format(suffix=rate["suffix"],
-                                                                                      max_day=max_day,
-                                                                                      months=rate["months"])
-        db.run(Q_EXPIRE_METADATA.format(suffix=rate["suffix"],
-                                        day=max_day,
-                                        months=rate["months"]))
-        print "VACUUMING AND ANALYZING flow_metadata{suffix}".format(suffix=rate["suffix"])
-        db.run(Q_VACUUM_METADATA.format(suffix=rate["suffix"]))
+        table_name = "flow_metadata{suffix}".format(suffix=rate["suffix"])
+        expire(db, table_name, max_day, rate["months"])
+        vacuum(db, table_name)
+        table_name = "flow_experiments{suffix}".format(suffix=rate["suffix"])
+        expire(db, table_name, max_day, rate["months"])
+        vacuum(db, table_name)
 
 import_events.run("fxa-flow/data/flow",
                   "flow",
@@ -283,7 +350,7 @@ import_events.run("fxa-flow/data/flow",
                   EVENT_SCHEMA,
                   EVENT_COLUMNS,
                   "flow_id",
-                  create_metadata_table,
-                  set_day_metadata,
-                  expire_metadata)
+                  before_import,
+                  after_day,
+                  after_import)
 

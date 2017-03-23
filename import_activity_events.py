@@ -16,5 +16,10 @@ SCHEMA = """
 
 COLUMNS = "ua_browser, ua_version, ua_os, uid, type, service, device_id"
 
-import_events.run("fxa-retention/data/events", "activity", SCHEMA, COLUMNS, SCHEMA, COLUMNS)
+import_events.run(s3_prefix="fxa-retention/data/events",
+                  event_type="activity",
+                  temp_schema=SCHEMA,
+                  temp_columns=COLUMNS,
+                  perm_schema=SCHEMA,
+                  perm_columns=COLUMNS)
 

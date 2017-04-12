@@ -124,7 +124,9 @@ Q_GET_LAST_AVAILABLE_DAY = """
 Q_VACUUM_TABLES = """
     END;
     VACUUM FULL daily_activity_per_device{suffix};
+    ANALYZE daily_activity_per_device{suffix};
     VACUUM FULL daily_multi_device_users{suffix};
+    ANALYZE daily_multi_device_users{suffix};
 """
 
 def summarize_events():

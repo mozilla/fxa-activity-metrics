@@ -157,7 +157,9 @@ def run(s3_prefix, event_type, temp_schema, temp_columns, perm_schema, perm_colu
         print message
         for key in s3.list(prefix=s3_prefix):
             filename = path.basename(key.name)
-            day = "-".join(filename[:-4].split("-")[1:])
+            # Ignore the last four characters (".csv") then join the last
+            # three parts ("YYYY-MM-DD") of the hyphen-split string.
+            day = "-".join(filename[:-4].split("-")[-3:])
             if is_candidate_day(day) and not is_day_populated(day):
                 days.append(day)
         return days

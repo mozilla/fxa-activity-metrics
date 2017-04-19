@@ -8,12 +8,12 @@ SCHEMA = """
     domain VARCHAR(40) ENCODE lzo,
     template VARCHAR(64) ENCODE lzo,
     type VARCHAR(64) NOT NULL ENCODE lzo,
-    complaint VARCHAR(64) ENCODE lzo,
     bounced VARCHAR(64) ENCODE lzo,
+    complaint VARCHAR(64) ENCODE lzo,
     locale VARCHAR(64) ENCODE lzo
 """
 
-COLUMNS = "flow_id, domain, template, type, complaint, bounced, locale"
+COLUMNS = "flow_id, domain, template, type, bounced, complaint, locale"
 
 import_events.run(s3_prefix="fxa-email/data/email-events",
                   event_type="email",

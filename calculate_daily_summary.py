@@ -32,13 +32,13 @@ TABLE_SUFFIXES = (
 
 Q_DAILY_DEVICES_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS daily_activity_per_device{suffix} (
-      day DATE NOT NULL SORTKEY ENCODE lzo,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      device_id VARCHAR(32) NOT NULL ENCODE lzo,
-      service VARCHAR(40) ENCODE lzo,
-      ua_browser VARCHAR(40) ENCODE lzo,
-      ua_version VARCHAR(40) ENCODE lzo,
-      ua_os VARCHAR(40) ENCODE lzo
+      day DATE NOT NULL SORTKEY ENCODE RAW,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
+      device_id VARCHAR(32) NOT NULL ENCODE zstd,
+      service VARCHAR(40) ENCODE zstd,
+      ua_browser VARCHAR(40) ENCODE zstd,
+      ua_version VARCHAR(40) ENCODE zstd,
+      ua_os VARCHAR(40) ENCODE zstd
     );
 """
 
@@ -73,10 +73,10 @@ Q_DAILY_DEVICES_EXPIRE = """
 
 Q_MD_USERS_CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS daily_multi_device_users{suffix} (
-      day DATE NOT NULL SORTKEY ENCODE lzo,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-      device_now VARCHAR(32) NOT NULL ENCODE lzo,
-      device_prev VARCHAR(32) NOT NULL ENCODE lzo
+      day DATE NOT NULL SORTKEY ENCODE RAW,
+      uid VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
+      device_now VARCHAR(32) NOT NULL ENCODE zstd,
+      device_prev VARCHAR(32) NOT NULL ENCODE zstd
     );
 """
 

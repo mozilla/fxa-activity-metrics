@@ -5,23 +5,23 @@
 import import_events
 
 TEMPORARY_SCHEMA = """
-    type VARCHAR(64) NOT NULL ENCODE lzo,
-    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-    flow_time BIGINT NOT NULL ENCODE lzo,
-    ua_browser VARCHAR(40) ENCODE lzo,
-    ua_version VARCHAR(40) ENCODE lzo,
-    ua_os VARCHAR(40) ENCODE lzo,
-    context VARCHAR(40) ENCODE lzo,
-    entrypoint VARCHAR(40) ENCODE lzo,
-    migration VARCHAR(40) ENCODE lzo,
-    service VARCHAR(40) ENCODE lzo,
-    utm_campaign VARCHAR(40) ENCODE lzo,
-    utm_content VARCHAR(40) ENCODE lzo,
-    utm_medium VARCHAR(40) ENCODE lzo,
-    utm_source VARCHAR(40) ENCODE lzo,
-    utm_term VARCHAR(40) ENCODE lzo,
-    locale VARCHAR(40) ENCODE lzo,
-    uid VARCHAR(64) ENCODE lzo
+    type VARCHAR(64) NOT NULL ENCODE zstd,
+    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
+    flow_time BIGINT NOT NULL ENCODE zstd,
+    ua_browser VARCHAR(40) ENCODE zstd,
+    ua_version VARCHAR(40) ENCODE zstd,
+    ua_os VARCHAR(40) ENCODE zstd,
+    context VARCHAR(40) ENCODE zstd,
+    entrypoint VARCHAR(40) ENCODE zstd,
+    migration VARCHAR(40) ENCODE zstd,
+    service VARCHAR(40) ENCODE zstd,
+    utm_campaign VARCHAR(40) ENCODE zstd,
+    utm_content VARCHAR(40) ENCODE zstd,
+    utm_medium VARCHAR(40) ENCODE zstd,
+    utm_source VARCHAR(40) ENCODE zstd,
+    utm_term VARCHAR(40) ENCODE zstd,
+    locale VARCHAR(40) ENCODE zstd,
+    uid VARCHAR(64) ENCODE zstd
 """
 
 TEMPORARY_COLUMNS = """
@@ -45,11 +45,11 @@ TEMPORARY_COLUMNS = """
 """
 
 EVENT_SCHEMA = """
-    type VARCHAR(64) NOT NULL ENCODE lzo,
-    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE lzo,
-    flow_time BIGINT NOT NULL ENCODE lzo,
-    locale VARCHAR(40) ENCODE lzo,
-    uid VARCHAR(64) ENCODE lzo
+    type VARCHAR(64) NOT NULL ENCODE zstd,
+    flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
+    flow_time BIGINT NOT NULL ENCODE zstd,
+    locale VARCHAR(40) ENCODE zstd,
+    uid VARCHAR(64) ENCODE zstd
 """
 
 EVENT_COLUMNS = """
@@ -62,39 +62,39 @@ EVENT_COLUMNS = """
 
 Q_CREATE_METADATA_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_metadata{suffix} (
-      flow_id VARCHAR(64) NOT NULL UNIQUE DISTKEY ENCODE lzo,
-      begin_time TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
+      flow_id VARCHAR(64) NOT NULL UNIQUE DISTKEY ENCODE zstd,
+      begin_time TIMESTAMP NOT NULL SORTKEY ENCODE RAW,
       -- Ideally duration would be type INTERVAL
       -- but redshift doesn't support that.
-      duration BIGINT NOT NULL DEFAULT 0 ENCODE lzo,
-      completed BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
-      new_account BOOLEAN NOT NULL DEFAULT FALSE ENCODE raw,
-      ua_browser VARCHAR(40) ENCODE lzo,
-      ua_version VARCHAR(40) ENCODE lzo,
-      ua_os VARCHAR(40) ENCODE lzo,
-      context VARCHAR(40) ENCODE lzo,
-      entrypoint VARCHAR(40) ENCODE lzo,
-      migration VARCHAR(40) ENCODE lzo,
-      service VARCHAR(40) ENCODE lzo,
-      utm_campaign VARCHAR(40) ENCODE lzo,
-      utm_content VARCHAR(40) ENCODE lzo,
-      utm_medium VARCHAR(40) ENCODE lzo,
-      utm_source VARCHAR(40) ENCODE lzo,
-      utm_term VARCHAR(40) ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo,
-      locale VARCHAR(40) ENCODE lzo,
-      uid VARCHAR(64) ENCODE lzo
+      duration BIGINT NOT NULL DEFAULT 0 ENCODE zstd,
+      completed BOOLEAN NOT NULL DEFAULT FALSE ENCODE zstd,
+      new_account BOOLEAN NOT NULL DEFAULT FALSE ENCODE zstd,
+      ua_browser VARCHAR(40) ENCODE zstd,
+      ua_version VARCHAR(40) ENCODE zstd,
+      ua_os VARCHAR(40) ENCODE zstd,
+      context VARCHAR(40) ENCODE zstd,
+      entrypoint VARCHAR(40) ENCODE zstd,
+      migration VARCHAR(40) ENCODE zstd,
+      service VARCHAR(40) ENCODE zstd,
+      utm_campaign VARCHAR(40) ENCODE zstd,
+      utm_content VARCHAR(40) ENCODE zstd,
+      utm_medium VARCHAR(40) ENCODE zstd,
+      utm_source VARCHAR(40) ENCODE zstd,
+      utm_term VARCHAR(40) ENCODE zstd,
+      export_date DATE NOT NULL ENCODE zstd,
+      locale VARCHAR(40) ENCODE zstd,
+      uid VARCHAR(64) ENCODE zstd
     );
 """
 
 Q_CREATE_EXPERIMENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS flow_experiments{suffix} (
-      experiment VARCHAR(40) NOT NULL DISTKEY ENCODE lzo,
-      cohort VARCHAR(40) NOT NULL ENCODE lzo,
-      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
-      flow_id VARCHAR(64) NOT NULL ENCODE lzo,
-      uid VARCHAR(64) ENCODE lzo,
-      export_date DATE NOT NULL ENCODE lzo
+      experiment VARCHAR(40) NOT NULL DISTKEY ENCODE zstd,
+      cohort VARCHAR(40) NOT NULL ENCODE zstd,
+      timestamp TIMESTAMP NOT NULL SORTKEY ENCODE RAW,
+      flow_id VARCHAR(64) NOT NULL ENCODE zstd,
+      uid VARCHAR(64) ENCODE zstd,
+      export_date DATE NOT NULL ENCODE zstd
     );
 """
 

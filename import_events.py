@@ -38,7 +38,7 @@ Q_DROP_TEMPORARY_TABLE = """
 
 Q_CREATE_EVENTS_TABLE = """
     CREATE TABLE IF NOT EXISTS {table} (
-        timestamp TIMESTAMP NOT NULL SORTKEY ENCODE lzo,
+        timestamp TIMESTAMP NOT NULL SORTKEY ENCODE RAW,
         {schema}
     );
 """.format(table=TABLE_NAMES["perm"], schema="{schema}")

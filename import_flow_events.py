@@ -4,8 +4,10 @@
 
 import import_events
 
+# flow_id is VARCHAR(64) because it's 32 bytes hex-encoded
+# type is VARCHAR(79) so it can contain `flow.continued.${flow_id}`
 TEMPORARY_SCHEMA = """
-    type VARCHAR(64) NOT NULL ENCODE zstd,
+    type VARCHAR(79) NOT NULL ENCODE zstd,
     flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
     flow_time BIGINT NOT NULL ENCODE zstd,
     ua_browser VARCHAR(40) ENCODE zstd,
@@ -45,7 +47,7 @@ TEMPORARY_COLUMNS = """
 """
 
 EVENT_SCHEMA = """
-    type VARCHAR(64) NOT NULL ENCODE zstd,
+    type VARCHAR(79) NOT NULL ENCODE zstd,
     flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
     flow_time BIGINT NOT NULL ENCODE zstd,
     locale VARCHAR(40) ENCODE zstd,
@@ -83,7 +85,8 @@ Q_CREATE_METADATA_TABLE = """
       utm_term VARCHAR(40) ENCODE zstd,
       export_date DATE NOT NULL ENCODE zstd,
       locale VARCHAR(40) ENCODE zstd,
-      uid VARCHAR(64) ENCODE zstd
+      uid VARCHAR(64) ENCODE zstd,
+      continued_from VARCHAR(64) ENCODE zstd
     );
 """
 
@@ -230,6 +233,21 @@ Q_UPDATE_METRICS_CONTEXT = """
     WHERE flow_metadata{suffix}.flow_id = metrics_context.flow_id;
 """
 
+Q_UPDATE_CONTINUED_FROM = """
+    UPDATE flow_metadata{suffix}
+    SET continued_from = SUBSTRING(continued.type, 16, 64)
+    FROM (
+      SELECT flow_id, type
+      FROM {table_name}
+      WHERE type LIKE 'flow.continued.%'
+        AND (
+          {table_name}.timestamp::DATE = '{day}'
+          OR {table_name}.timestamp::DATE = '{day}'::DATE + '1 day'::INTERVAL
+        )
+    ) AS continued
+    WHERE flow_metadata{suffix}.flow_id = continued.flow_id;
+"""
+
 Q_INSERT_EXPERIMENTS = """
     INSERT INTO flow_experiments{suffix} (
       experiment,
@@ -313,6 +331,9 @@ def after_day(db, day, temporary_table_name, permanent_table_name, sample_rates)
             db.run(Q_UPDATE_METRICS_CONTEXT.format(suffix=rate["suffix"],
                                                    table_name=temporary_table_name,
                                                    percent=rate["percent"]))
+        db.run(Q_UPDATE_CONTINUED_FROM.format(suffix=rate["suffix"],
+                                              table_name=table_name,
+                                              day=day))
         print "  flow_experiments{suffix}".format(suffix=rate["suffix"])
         print "    CLEARING"
         db.run(Q_CLEAR_DAY.format(table="experiments", suffix=rate["suffix"], day=day))

@@ -172,7 +172,8 @@ Q_INSERT_EVENTS = """
       STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS cohort
     FROM {temp_table}
   )
-  WHERE cohort <= {percent};
+  WHERE cohort <= {percent}
+  AND type NOT LIKE 'flow.continued.%';
 """.format(table_name="{table_name}", temp_table=TABLE_NAMES["temp"], percent="{percent}")
 
 Q_INSERT_EXPERIMENTS = """

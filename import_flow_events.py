@@ -248,6 +248,12 @@ Q_UPDATE_CONTINUED_FROM = """
     WHERE flow_metadata{suffix}.flow_id = continued.flow_id;
 """
 
+Q_DELETE_CONTINUED_EVENTS = """
+    DELETE FROM {table_name}
+    WHERE timestamp::DATE <= '{day}'
+    AND type LIKE 'flow.continued.%';
+"""
+
 Q_INSERT_EXPERIMENTS = """
     INSERT INTO flow_experiments{suffix} (
       experiment,
@@ -334,6 +340,7 @@ def after_day(db, day, temporary_table_name, permanent_table_name, sample_rates)
         db.run(Q_UPDATE_CONTINUED_FROM.format(suffix=rate["suffix"],
                                               table_name=table_name,
                                               day=day))
+        db.run(Q_DELETE_CONTINUED_EVENTS.format(table_name=table_name, day=day))
         print "  flow_experiments{suffix}".format(suffix=rate["suffix"])
         print "    CLEARING"
         db.run(Q_CLEAR_DAY.format(table="experiments", suffix=rate["suffix"], day=day))

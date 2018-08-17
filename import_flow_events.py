@@ -291,6 +291,12 @@ Q_UPDATE_EXPERIMENTS = """
     WHERE flow_experiments{suffix}.flow_id = events.flow_id;
 """
 
+Q_DELETE_EXPERIMENT_EVENTS = """
+    DELETE FROM {table_name}
+    WHERE timestamp::DATE <= '{day}'
+    AND type LIKE 'flow.experiment.%';
+"""
+
 Q_EXPIRE = """
     DELETE FROM {table_name}
     WHERE export_date < '{max_day}'::DATE - '{months} months'::INTERVAL;
@@ -353,6 +359,7 @@ def after_day(db, day, temporary_table_name, permanent_table_name, sample_rates)
         db.run(Q_UPDATE_EXPERIMENTS.format(suffix=rate["suffix"],
                                            table_name=table_name,
                                            day=day))
+        db.run(Q_DELETE_EXPERIMENT_EVENTS.format(table_name=table_name, day=day))
 
 def expire(db, table_name, max_day, months):
     print "EXPIRING", table_name, "FOR", max_day, "+", months, "MONTHS"

@@ -129,52 +129,6 @@ Q_VACUUM_TABLES = """
     ANALYZE daily_multi_device_users{suffix};
 """
 
-# The "strict" multi-device users table tweaks the multi-device classification
-# to ensure that the the current device was also used at some point before the
-# previous device.
-Q_STRICT_MD_USERS_CREATE_TABLE = """
-    CREATE TABLE IF NOT EXISTS strict_daily_multi_device_users (
-      day DATE NOT NULL SORTKEY ENCODE RAW,
-      uid VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
-      device_now VARCHAR(32) NOT NULL ENCODE zstd,
-      device_prev VARCHAR(32) NOT NULL ENCODE zstd
-    );
-"""
-
-Q_STRICT_MD_USERS_CLEAR = """
-    DELETE FROM strict_daily_multi_device_users
-    WHERE day >= '{day_from}'::DATE
-    AND day <= '{day_until}'::DATE;
-"""
-
-Q_STRICT_MD_USERS_SUMMARIZE = """
-    INSERT INTO strict_daily_multi_device_users (day, uid, device_now, device_prev)
-    SELECT DISTINCT present.day, present.uid, present.device_id, past_different.device_id
-    FROM daily_activity_per_device as present
-    INNER JOIN daily_activity_per_device as past_different
-      ON present.uid = past_different.uid
-      AND present.device_id != past_different.device_id
-      AND present.day > past_different.day
-      AND present.day <= past_different.day + '7 days'::INTERVAL
-    INNER JOIN daily_activity_per_device AS past_same
-      ON present.uid = past_same.uid
-      AND present.device_id = past_same.device_id
-      AND past_different.day > past_same.day
-    WHERE present.day >= '{day_from}'::DATE
-    AND present.day <= '{day_until}'::DATE;
-"""
-
-Q_STRICT_MD_USERS_EXPIRE = """
-    DELETE FROM strict_daily_multi_device_users
-    WHERE day < '{day_first}'::DATE;
-"""
-
-Q_VACUUM_STRICT_MD_USERS = """
-    END;
-    VACUUM FULL strict_daily_multi_device_users;
-    ANALYZE strict_daily_multi_device_users;
-"""
-
 def summarize_events():
     db = postgres.Postgres(DB)
     for suffix in TABLE_SUFFIXES:
@@ -209,12 +163,6 @@ def summarize_events():
 
         print "VACUUMING daily_activity_per_device{suffix} AND daily_multi_device_users{suffix}".format(suffix=suffix)
         db.run(Q_VACUUM_TABLES.format(suffix=suffix))
-    print "SUMMARIZING FROM", day_from, "UNTIL", day_until, "FOR STRICT MULTI-DEVICE USERS"
-    db.run(Q_STRICT_MD_USERS_CREATE_TABLE)
-    db.run(Q_STRICT_MD_USERS_CLEAR.format(**days))
-    db.run(Q_STRICT_MD_USERS_SUMMARIZE.format(**days))
-    db.run(Q_STRICT_MD_USERS_EXPIRE.format(day_first=day_first))
-    db.run(Q_VACUUM_STRICT_MD_USERS)
 
 if __name__ == "__main__":
     summarize_events()

@@ -148,6 +148,12 @@ Q_INSERT_METADATA = """
     AND type = 'flow.begin';
 """
 
+Q_DELETE_BEGIN_EVENTS = """
+    DELETE FROM {table_name}
+    WHERE timestamp::DATE <= '{day}'
+    AND type = 'flow.begin';
+"""
+
 Q_UPDATE_METADATA = """
     UPDATE flow_metadata{suffix}
     SET
@@ -324,6 +330,7 @@ def after_day(db, day, temporary_table_name, permanent_table_name, sample_rates)
                                         day=day,
                                         table_name=temporary_table_name,
                                         percent=rate["percent"]))
+        db.run(Q_DELETE_BEGIN_EVENTS.format(table_name=table_name, day=day))
         print "    UPDATING"
         db.run(Q_UPDATE_METADATA.format(suffix=rate["suffix"],
                                         table_name=table_name,

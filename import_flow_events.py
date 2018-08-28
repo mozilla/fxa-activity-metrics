@@ -145,7 +145,7 @@ Q_INSERT_METADATA = """
       FROM {table_name}
     )
     WHERE sample <= {percent}
-    AND type LIKE 'flow%begin';
+    AND type = 'flow.begin';
 """
 
 Q_UPDATE_METADATA = """

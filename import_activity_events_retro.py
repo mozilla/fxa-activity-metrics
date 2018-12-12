@@ -17,15 +17,26 @@ import boto.provider
 # Load config from disk,
 # and pull in credentials from the environment.
 
-with open("config.json") as f:
-    CONFIG = json.loads(f.read())
+REDSHIFT_USER = os.environ["REDSHIFT_USER"]
+REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
+REDSHIFT_HOST = os.environ["REDSHIFT_HOST"]
+REDSHIFT_PORT = os.environ["REDSHIFT_PORT"]
+REDSHIFT_DBNAME = os.environ["REDSHIFT_DBNAME"]
 
-if "aws_access_key_id" not in CONFIG:
-    p = boto.provider.Provider("aws")
-    CONFIG["aws_access_key_id"] = p.get_access_key()
-    CONFIG["aws_secret_access_key"] = p.get_secret_key()
+DB = "postgresql://{REDSHIFT_USER}:{REDSHIFT_PASSWORD}@{REDSHIFT_HOST}:{REDSHIFT_PORT}/{REDSHIFT_DBNAME}".format(
+    REDSHIFT_USER=REDSHIFT_USER, REDSHIFT_PASSWORD=REDSHIFT_PASSWORD, REDSHIFT_HOST=REDSHIFT_HOST,
+    REDSHIFT_PORT=REDSHIFT_PORT, REDSHIFT_DBNAME=REDSHIFT_DBNAME
+)
 
-DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
+def env_or_default(variable_name, default_value):
+    if variable_name in os.environ:
+        return os.environ[variable_name]
+
+    return default_value
+
+p = boto.provider.Provider("aws")
+AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", p.get_access_key())
+AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", p.get_secret_key())
 
 # Event data files are named like "events-2016-02-15.csv"
 # and contain events for the specified date.
@@ -92,7 +103,7 @@ Q_COPY_CSV = """
       device_id
     )
     FROM '{s3path}'
-    CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
+    CREDENTIALS 'aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
 """
@@ -174,7 +185,7 @@ def import_events(force_reload=False):
                 db.run(Q_CLEAR_DAY.format(suffix=rate["suffix"], day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
-            db.run(Q_COPY_CSV.format(s3path=s3path, **CONFIG))
+            db.run(Q_COPY_CSV.format(s3path=s3path, AWS_ACCESS_KEY=AWS_ACCESS_KEY, AWS_SECRET_KEY=AWS_SECRET_KEY))
             # Populate the activity_events table
             for rate in SAMPLE_RATES:
                 db.run(Q_INSERT_EVENTS.format(suffix=rate["suffix"], percent=rate["percent"], last_day=last_day, months=rate["months"]))

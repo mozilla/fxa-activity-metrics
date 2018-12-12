@@ -10,16 +10,19 @@
 import json
 import time
 import datetime
-
+import os
 import postgres
 
-# Load config from disk,
-# and pull in credentials from the environment.
+REDSHIFT_USER = os.environ["REDSHIFT_USER"]
+REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
+REDSHIFT_HOST = os.environ["REDSHIFT_HOST"]
+REDSHIFT_PORT = os.environ["REDSHIFT_PORT"]
+REDSHIFT_DBNAME = os.environ["REDSHIFT_DBNAME"]
 
-with open("config.json") as f:
-    CONFIG = json.loads(f.read())
-
-DB = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
+DB = "postgresql://{REDSHIFT_USER}:{REDSHIFT_PASSWORD}@{REDSHIFT_HOST}:{REDSHIFT_PORT}/{REDSHIFT_DBNAME}".format(
+    REDSHIFT_USER=REDSHIFT_USER, REDSHIFT_PASSWORD=REDSHIFT_PASSWORD, REDSHIFT_HOST=REDSHIFT_HOST,
+    REDSHIFT_PORT=REDSHIFT_PORT, REDSHIFT_DBNAME=REDSHIFT_DBNAME
+)
 
 TABLE_SUFFIXES = (
     "_sampled_10",

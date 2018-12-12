@@ -4,20 +4,34 @@ import json
 import boto.s3
 import boto.provider
 import postgres
+import os
 
-with open("config.json") as f:
-    CONFIG = json.loads(f.read())
+REDSHIFT_USER = os.environ["REDSHIFT_USER"]
+REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
+REDSHIFT_HOST = os.environ["REDSHIFT_HOST"]
+REDSHIFT_PORT = os.environ["REDSHIFT_PORT"]
+REDSHIFT_DBNAME = os.environ["REDSHIFT_DBNAME"]
 
-if "aws_access_key_id" not in CONFIG:
-    aws = boto.provider.Provider("aws")
-    CONFIG["aws_access_key_id"] = aws.get_access_key()
-    CONFIG["aws_secret_access_key"] = aws.get_secret_key()
+DB_URI = "postgresql://{REDSHIFT_USER}:{REDSHIFT_PASSWORD}@{REDSHIFT_HOST}:{REDSHIFT_PORT}/{REDSHIFT_DBNAME}".format(
+    REDSHIFT_USER=REDSHIFT_USER, REDSHIFT_PASSWORD=REDSHIFT_PASSWORD, REDSHIFT_HOST=REDSHIFT_HOST,
+    REDSHIFT_PORT=REDSHIFT_PORT, REDSHIFT_DBNAME=REDSHIFT_DBNAME
+)
+
+def env_or_default(variable_name, default_value):
+    if variable_name in os.environ:
+        return os.environ[variable_name]
+
+    return default_value
+
+aws = boto.provider.Provider("aws")
+AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
+AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
 
 S3_REGION = "us-east-1"
 S3_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 S3_PREFIX = "fxa-basic-metrics/"
 S3_URI = "s3://" + S3_BUCKET + "/" + S3_PREFIX + "fxa-basic-metrics-{day}.txt"
-DB_URI = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
+
 COUNTS_BEGIN = datetime.strptime("2017-05-30", "%Y-%m-%d")
 
 Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_counts;"
@@ -51,10 +65,10 @@ Q_CLEAR_DAY = """
 Q_COPY_CSV = """
     COPY temporary_raw_counts (day, accounts, verified_accounts)
     FROM '{s3_uri}'
-    CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
+    CREDENTIALS 'aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
-""".format(s3_uri=S3_URI, **CONFIG)
+""".format(s3_uri=S3_URI, AWS_ACCESS_KEY=AWS_ACCESS_KEY, AWS_SECRET_KEY=AWS_SECRET_KEY)
 
 Q_INSERT_COUNTS = """
     INSERT INTO counts (day, accounts, verified_accounts)

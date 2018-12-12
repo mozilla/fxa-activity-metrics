@@ -4,17 +4,30 @@ import json
 import boto.s3
 import boto.provider
 import postgres
+import os
 
-with open("config.json") as f:
-    CONFIG = json.loads(f.read())
+REDSHIFT_USER = os.environ["REDSHIFT_USER"]
+REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
+REDSHIFT_HOST = os.environ["REDSHIFT_HOST"]
+REDSHIFT_PORT = os.environ["REDSHIFT_PORT"]
+REDSHIFT_DBNAME = os.environ["REDSHIFT_DBNAME"]
 
-if "aws_access_key_id" not in CONFIG:
-    aws = boto.provider.Provider("aws")
-    CONFIG["aws_access_key_id"] = aws.get_access_key()
-    CONFIG["aws_secret_access_key"] = aws.get_secret_key()
+DB_URI = "postgresql://{REDSHIFT_USER}:{REDSHIFT_PASSWORD}@{REDSHIFT_HOST}:{REDSHIFT_PORT}/{REDSHIFT_DBNAME}".format(
+    REDSHIFT_USER=REDSHIFT_USER, REDSHIFT_PASSWORD=REDSHIFT_PASSWORD, REDSHIFT_HOST=REDSHIFT_HOST,
+    REDSHIFT_PORT=REDSHIFT_PORT, REDSHIFT_DBNAME=REDSHIFT_DBNAME
+)
+
+def env_or_default(variable_name, default_value):
+    if variable_name in os.environ:
+        return os.environ[variable_name]
+
+    return default_value
+
+aws = boto.provider.Provider("aws")
+AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
+AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
 
 S3_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
-DB_URI = "postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}".format(**CONFIG)
 
 # The default data set automatically expires data at
 # three months. We also have sampled data sets that
@@ -69,14 +82,14 @@ Q_COPY_CSV = """
         {columns}
     )
     FROM '{s3_path}'
-    CREDENTIALS 'aws_access_key_id={aws_access_key_id};aws_secret_access_key={aws_secret_access_key}'
+    CREDENTIALS 'aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
 """.format(table=TABLE_NAMES["temp"],
            columns="{columns}",
            s3_path="{s3_path}",
-           aws_access_key_id="{aws_access_key_id}",
-           aws_secret_access_key="{aws_secret_access_key}")
+           AWS_ACCESS_KEY="{AWS_ACCESS_KEY}",
+           AWS_SECRET_KEY="{AWS_SECRET_KEY}")
 
 Q_CLEAR_DAY = """
     DELETE FROM {table}
@@ -178,7 +191,8 @@ def run(s3_prefix, event_type, temp_schema, temp_columns, perm_schema, perm_colu
         db.run(Q_COPY_CSV.format(event_type=event_type,
                                  columns=temp_columns,
                                  s3_path=s3_path,
-                                 **CONFIG))
+                                 AWS_ACCESS_KEY=AWS_ACCESS_KEY,
+                                 AWS_SECRET_KEY=AWS_SECRET_KEY))
         print_timestamp("MIN")
         print_timestamp("MAX")
         for rate in SAMPLE_RATES:

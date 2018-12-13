@@ -27,7 +27,7 @@ aws = boto.provider.Provider("aws")
 AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
 AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
 
-S3_REGION = "us-east-1"
+S3_REGION = "us-west-2"
 S3_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 S3_PREFIX = "fxa-basic-metrics/"
 S3_URI = "s3://" + S3_BUCKET + "/" + S3_PREFIX + "fxa-basic-metrics-{day}.txt"

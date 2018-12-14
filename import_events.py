@@ -23,11 +23,11 @@ def env_or_default(variable_name, default_value):
 
     return default_value
 
-aws = boto.provider.Provider("aws")
 AWS_IAM_ROLE = env_or_default('AWS_IAM_ROLE', None)
 if AWS_IAM_ROLE is not None:
     CREDENTIALS="aws_iam_role={AWS_IAM_ROLE}".format(AWS_IAM_ROLE=AWS_IAM_ROLE)
 else:
+    aws = boto.provider.Provider("aws")
     AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
     AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
     CREDENTIALS="aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}".format(

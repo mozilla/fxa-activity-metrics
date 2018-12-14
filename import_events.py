@@ -24,8 +24,16 @@ def env_or_default(variable_name, default_value):
     return default_value
 
 aws = boto.provider.Provider("aws")
-AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
-AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
+AWS_IAM_ROLE = env_or_default('AWS_IAM_ROLE', None)
+if AWS_IAM_ROLE is not None:
+    CREDENTIALS="aws_iam_role={AWS_IAM_ROLE}".format(AWS_IAM_ROLE=AWS_IAM_ROLE)
+else:
+    AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", aws.get_access_key())
+    AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", aws.get_secret_key())
+    CREDENTIALS="aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}".format(
+        AWS_ACCESS_KEY=AWS_ACCESS_KEY,
+        AWS_SECRET_KEY=AWS_SECRET_KEY
+    )
 
 S3_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 
@@ -82,14 +90,13 @@ Q_COPY_CSV = """
         {columns}
     )
     FROM '{s3_path}'
-    CREDENTIALS 'aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}'
+    CREDENTIALS '{CREDENTIALS}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
 """.format(table=TABLE_NAMES["temp"],
            columns="{columns}",
            s3_path="{s3_path}",
-           AWS_ACCESS_KEY="{AWS_ACCESS_KEY}",
-           AWS_SECRET_KEY="{AWS_SECRET_KEY}")
+           CREDENTIALS="{CREDENTIALS}")
 
 Q_CLEAR_DAY = """
     DELETE FROM {table}

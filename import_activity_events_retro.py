@@ -150,7 +150,7 @@ Q_VACUUM_TABLES = """
 """
 
 def import_events(force_reload=False):
-    b = boto.s3.connect_to_region("us-east-1").get_bucket(EVENTS_BUCKET)
+    b = boto.s3.connect_to_region("us-west-2").get_bucket(EVENTS_BUCKET)
     db = postgres.Postgres(DB)
     db.run(Q_DROP_CSV_TABLE)
     # Deliberately don't create the activity_events tables here,

@@ -228,7 +228,7 @@ def run(s3_prefix, event_type, temp_schema, temp_columns, perm_schema, perm_colu
             db.run(Q_VACUUM_TABLES.format(event_type=event_type,
                                           suffix=rate["suffix"]))
 
-    s3 = boto.s3.connect_to_region("us-east-1").get_bucket(S3_BUCKET)
+    s3 = boto.s3.connect_to_region("us-west-2").get_bucket(S3_BUCKET)
     db = postgres.Postgres(DB_URI)
     s3_uri = "s3://" + S3_BUCKET + "/" + s3_prefix + "-{day}.csv"
 

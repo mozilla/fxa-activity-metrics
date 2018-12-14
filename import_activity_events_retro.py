@@ -35,8 +35,16 @@ def env_or_default(variable_name, default_value):
     return default_value
 
 p = boto.provider.Provider("aws")
-AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", p.get_access_key())
-AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", p.get_secret_key())
+AWS_IAM_ROLE = env_or_default('AWS_IAM_ROLE', None)
+if AWS_IAM_ROLE is not None:
+    CREDENTIALS="aws_iam_role={AWS_IAM_ROLE}".format(AWS_IAM_ROLE=AWS_IAM_ROLE)
+else:
+    AWS_ACCESS_KEY = env_or_default("AWS_ACCESS_KEY", p.get_access_key())
+    AWS_SECRET_KEY = env_or_default("AWS_SECRET_KEY", pa.get_secret_key())
+    CREDENTIALS="aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}".format(
+        AWS_ACCESS_KEY=AWS_ACCESS_KEY,
+        AWS_SECRET_KEY=AWS_SECRET_KEY
+    )
 
 # Event data files are named like "events-2016-02-15.csv"
 # and contain events for the specified date.
@@ -103,7 +111,7 @@ Q_COPY_CSV = """
       device_id
     )
     FROM '{s3path}'
-    CREDENTIALS 'aws_access_key_id={AWS_ACCESS_KEY};aws_secret_access_key={AWS_SECRET_KEY}'
+    CREDENTIALS '{CREDENTIALS}'
     FORMAT AS CSV
     TRUNCATECOLUMNS;
 """
@@ -185,7 +193,7 @@ def import_events(force_reload=False):
                 db.run(Q_CLEAR_DAY.format(suffix=rate["suffix"], day=day))
             s3path = EVENTS_FILE_URL.format(day=day)
             # Copy data from s3 into redshift
-            db.run(Q_COPY_CSV.format(s3path=s3path, AWS_ACCESS_KEY=AWS_ACCESS_KEY, AWS_SECRET_KEY=AWS_SECRET_KEY))
+            db.run(Q_COPY_CSV.format(s3path=s3path, CREDENTIALS=CREDENTIALS))
             # Populate the activity_events table
             for rate in SAMPLE_RATES:
                 db.run(Q_INSERT_EVENTS.format(suffix=rate["suffix"], percent=rate["percent"], last_day=last_day, months=rate["months"]))

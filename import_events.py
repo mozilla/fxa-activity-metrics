@@ -197,9 +197,7 @@ def run(s3_prefix, event_type, temp_schema, temp_columns, perm_schema, perm_colu
         s3_path = s3_uri.format(day=day)
         db.run(Q_COPY_CSV.format(event_type=event_type,
                                  columns=temp_columns,
-                                 s3_path=s3_path,
-                                 AWS_ACCESS_KEY=AWS_ACCESS_KEY,
-                                 AWS_SECRET_KEY=AWS_SECRET_KEY))
+                                 s3_path=s3_path))
         print_timestamp("MIN")
         print_timestamp("MAX")
         for rate in SAMPLE_RATES:

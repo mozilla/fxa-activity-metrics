@@ -47,8 +47,5 @@ workflows:
     jobs:
       - build:
           filters:
-            branches:
-              ignore: /.*/
-
             tags:
               only: /^v[0-9.]+$/

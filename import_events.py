@@ -92,6 +92,7 @@ Q_COPY_CSV = """
     FROM '{s3_path}'
     CREDENTIALS '{CREDENTIALS}'
     FORMAT AS CSV
+    MAXERROR AS 100
     TRUNCATECOLUMNS;
 """.format(table=TABLE_NAMES["temp"],
            columns="{columns}",

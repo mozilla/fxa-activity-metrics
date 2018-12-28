@@ -23,7 +23,9 @@ TEMPORARY_SCHEMA = """
     utm_source VARCHAR(40) ENCODE zstd,
     utm_term VARCHAR(40) ENCODE zstd,
     locale VARCHAR(40) ENCODE zstd,
-    uid VARCHAR(64) ENCODE zstd
+    uid VARCHAR(64) ENCODE zstd,
+    country VARCHAR(40) ENCODE zstd,
+    region VARCHAR(40) ENCODE zstd
 """
 
 TEMPORARY_COLUMNS = """
@@ -43,7 +45,9 @@ TEMPORARY_COLUMNS = """
     utm_source,
     utm_term,
     locale,
-    uid
+    uid,
+    country,
+    region
 """
 
 EVENT_SCHEMA = """
@@ -51,7 +55,9 @@ EVENT_SCHEMA = """
     flow_id VARCHAR(64) NOT NULL DISTKEY ENCODE zstd,
     flow_time BIGINT NOT NULL ENCODE zstd,
     locale VARCHAR(40) ENCODE zstd,
-    uid VARCHAR(64) ENCODE zstd
+    uid VARCHAR(64) ENCODE zstd,
+    country VARCHAR(40) ENCODE zstd,
+    region VARCHAR(40) ENCODE zstd
 """
 
 EVENT_COLUMNS = """
@@ -59,7 +65,9 @@ EVENT_COLUMNS = """
     flow_id,
     flow_time,
     locale,
-    uid
+    uid,
+    country,
+    region
 """
 
 Q_CREATE_METADATA_TABLE = """

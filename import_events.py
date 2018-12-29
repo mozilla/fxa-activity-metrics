@@ -78,7 +78,7 @@ Q_CHECK_FOR_DAY = """
            day="{day}")
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS {table} (
+    CREATE TEMPORARY TABLE IF NOT EXISTS {table} (
         timestamp BIGINT NOT NULL SORTKEY,
         {schema}
     );

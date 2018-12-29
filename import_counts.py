@@ -58,7 +58,7 @@ Q_CHECK_FOR_DAY = """
 """
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TABLE IF NOT EXISTS temporary_raw_counts (
+    CREATE TEMPORARY TABLE IF NOT EXISTS temporary_raw_counts (
       day CHAR(10) NOT NULL UNIQUE SORTKEY,
       accounts BIGINT NOT NULL,
       verified_accounts BIGINT NOT NULL

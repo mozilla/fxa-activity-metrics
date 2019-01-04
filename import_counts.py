@@ -5,6 +5,7 @@ import boto.s3
 import boto.provider
 import postgres
 import os
+import uuid
 
 REDSHIFT_USER = os.environ["REDSHIFT_USER"]
 REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
@@ -42,7 +43,13 @@ S3_URI = "s3://" + S3_BUCKET + "/" + S3_PREFIX + "fxa-basic-metrics-{day}.txt"
 
 COUNTS_BEGIN = datetime.strptime("2017-05-30", "%Y-%m-%d")
 
-Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS temporary_raw_counts;"
+# Used to generate a unique name for temporary table.
+# This allows concurrent sessions to run without interrupting each other.
+SESSION_ID = uuid.uuid4().replace("-", "")
+
+TEMPORARY_TABLE_NAME = "temporary_raw_counts_{session_id}".format(session_id=SESSION_ID)
+
+Q_DROP_CSV_TABLE = "DROP TABLE IF EXISTS {name};".format(name=TEMPORARY_TABLE_NAME)
 
 Q_CREATE_COUNTS_TABLE = """
     CREATE TABLE IF NOT EXISTS counts (
@@ -58,12 +65,12 @@ Q_CHECK_FOR_DAY = """
 """
 
 Q_CREATE_CSV_TABLE = """
-    CREATE TEMPORARY TABLE IF NOT EXISTS temporary_raw_counts (
+    CREATE TEMPORARY TABLE IF NOT EXISTS {name} (
       day CHAR(10) NOT NULL UNIQUE SORTKEY,
       accounts BIGINT NOT NULL,
       verified_accounts BIGINT NOT NULL
     );
-"""
+""".format(name=TEMPORARY_TABLE_NAME)
 
 Q_CLEAR_DAY = """
     DELETE FROM counts
@@ -71,19 +78,19 @@ Q_CLEAR_DAY = """
 """
 
 Q_COPY_CSV = """
-    COPY temporary_raw_counts (day, accounts, verified_accounts)
+    COPY {table_name} (day, accounts, verified_accounts)
     FROM '{s3_uri}'
     CREDENTIALS '{CREDENTIALS}'
     FORMAT AS CSV
     MAXERROR AS 10
     TRUNCATECOLUMNS;
-""".format(s3_uri=S3_URI, CREDENTIALS=CREDENTIALS)
+""".format(table_name=TEMPORARY_TABLE_NAME, s3_uri=S3_URI, CREDENTIALS=CREDENTIALS)
 
 Q_INSERT_COUNTS = """
     INSERT INTO counts (day, accounts, verified_accounts)
     SELECT day::DATE, accounts, verified_accounts
-    FROM temporary_raw_counts;
-"""
+    FROM {from_table};
+""".format(from_table=TEMPORARY_TABLE_NAME)
 
 Q_VACUUM_COUNTS = """
     END;

@@ -114,7 +114,7 @@ Q_INSERT_EVENTS = """
             STRTOL(SUBSTRING({id_column} FROM 0 FOR 8), 16) % 100 AS cohort
         FROM {temp_table}
     )
-    WHERE cohort <= {percent}
+    WHERE cohort < {percent}
     AND ts::DATE = '{day}'::DATE
     AND ts::DATE >= '{max_day}'::DATE - '{months} months'::INTERVAL;
 """.format(perm_table=TABLE_NAMES["perm"],

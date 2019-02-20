@@ -11,10 +11,12 @@ SCHEMA = """
     service VARCHAR(40) ENCODE zstd,
     ua_browser VARCHAR(40) ENCODE zstd,
     ua_version VARCHAR(40) ENCODE zstd,
-    ua_os VARCHAR(40) ENCODE zstd
+    ua_os VARCHAR(40) ENCODE zstd,
+    country VARCHAR(40) ENCODE zstd,
+    region VARCHAR(40) ENCODE zstd
 """
 
-COLUMNS = "ua_browser, ua_version, ua_os, uid, type, service, device_id"
+COLUMNS = "ua_browser, ua_version, ua_os, uid, type, service, device_id, country, region"
 
 import_events.run(s3_prefix="fxa-retention/data/events",
                   event_type="activity",

@@ -5,6 +5,7 @@ import boto.s3
 import boto.provider
 import postgres
 import os
+import uuid
 
 REDSHIFT_USER = os.environ["REDSHIFT_USER"]
 REDSHIFT_PASSWORD = os.environ["REDSHIFT_PASSWORD"]
@@ -46,10 +47,17 @@ SAMPLE_RATES = (
     {"percent":100, "months":3, "suffix":""}
 )
 
+# Used to generate a unique name for temporary tables.
+# This allows concurrent sessions to run without interrupting each other.
+SESSION_ID = uuid.uuid4().replace("-", "")
+
 # The temporary table receives raw data from S3.
 # The permenant table then receives data appropriately typed.
 TABLE_NAMES = {
-    "temp":"temporary_raw_{event_type}_data",
+    "temp":"temporary_raw_{event_type}_data_{session_id}".format(
+        event_type="{event_type}",
+        session_id=SESSION_ID
+    ),
     "perm":"{event_type}_events{suffix}"
 }
 

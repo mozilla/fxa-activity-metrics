@@ -41,8 +41,8 @@ S3_BUCKET = "net-mozaws-prod-us-west-2-pipeline-analysis"
 # three months. We also have sampled data sets that
 # cover a longer history.
 SAMPLE_RATES = (
-    {"percent":10, "months":24, "suffix":"_sampled_10"},
-    {"percent":50, "months":6, "suffix":"_sampled_50"},
+    {"percent":10, "months":24, "suffix":"_sampled_11"},
+    {"percent":50, "months":6, "suffix":"_sampled_51"},
     {"percent":100, "months":3, "suffix":""}
 )
 
@@ -74,7 +74,7 @@ Q_CHECK_FOR_DAY = """
     WHERE timestamp::DATE = '{day}'::DATE
     LIMIT 1;
 """.format(table=TABLE_NAMES["perm"].format(event_type="{event_type}",
-                                            suffix="_sampled_10"),
+                                            suffix="_sampled_11"),
            day="{day}")
 
 Q_CREATE_CSV_TABLE = """

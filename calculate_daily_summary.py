@@ -25,8 +25,8 @@ DB = "postgresql://{REDSHIFT_USER}:{REDSHIFT_PASSWORD}@{REDSHIFT_HOST}:{REDSHIFT
 )
 
 TABLE_SUFFIXES = (
-    "_sampled_10",
-    "_sampled_50",
+    "_sampled_11",
+    "_sampled_51",
     ""
 )
 

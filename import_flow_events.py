@@ -144,7 +144,7 @@ Q_INSERT_METADATA = """
       SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
       FROM {table_name}
     )
-    WHERE sample <= {percent}
+    WHERE sample < {percent}
     AND type = 'flow.begin';
 """
 
@@ -233,7 +233,7 @@ Q_UPDATE_METRICS_CONTEXT = """
         SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
         FROM {table_name}
       )
-      WHERE sample <= {percent}
+      WHERE sample < {percent}
       GROUP BY flow_id
     ) AS metrics_context
     WHERE flow_metadata{suffix}.flow_id = metrics_context.flow_id;
@@ -280,7 +280,7 @@ Q_INSERT_EXPERIMENTS = """
       SELECT *, STRTOL(SUBSTRING(flow_id FROM 0 FOR 8), 16) % 100 AS sample
       FROM {table_name}
     )
-    WHERE sample <= {percent}
+    WHERE sample < {percent}
     AND type LIKE 'flow.experiment.%';
 """
 
